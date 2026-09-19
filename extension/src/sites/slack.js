@@ -256,6 +256,10 @@
     name: "slack",
     workspaceId,
 
+    /** Heading of the suggestion row. Names the product, so it lives here:
+     *  the site-neutral code must not know which site it is running on. */
+    rowLabel: "Slack Emoji Suggest によるおすすめ",
+
     /** A human-readable workspace name, or null to fall back to the id. */
     workspaceName() {
       const el = document.querySelector(SEL.workspaceName);

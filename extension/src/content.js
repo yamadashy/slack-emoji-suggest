@@ -259,7 +259,7 @@
     row.textContent = "";
     const label = document.createElement("div");
     label.className = "sjr-label";
-    label.textContent = "おすすめ";
+    label.textContent = adapter.rowLabel || "おすすめ";
     row.appendChild(label);
     const body = document.createElement("div");
     body.className = "sjr-body";
