@@ -1,215 +1,335 @@
-# emoji-suggest
+# Emoji Suggest for Slack
 
-Slack のメッセージに付けるリアクション絵文字の候補を、TypeSafe の Jev で出す Chrome 拡張の試作。
-元ネタは #memo-アイデア の「jevを使ってslack絵文字を出すやつ」（2026-09-18）。
+A Chrome extension that suggests emoji reactions for a Slack message, including
+your workspace's own custom emoji. Hover a message and the extension asks a
+model to score every candidate emoji; open the reaction picker and the top five
+appear as a row above 「よく使う絵文字」, one click away. The interesting part is
+the custom emoji: a workspace's `:shipit:`, `:repomix:` or `:claude-code:` are
+usually the ones people actually reach for, and they are learned from Slack's
+own UI rather than from any API.
 
-形になったら別リポジトリへ切り出す。それまでは `extension/` に実装ごと置く。
+Ranking is done by [TypeSafe](https://typesafe.ai)'s Jev model, but the model
+sits behind a one-function boundary and is meant to be swappable.
 
-## 動かし方
+<!-- screenshot: the おすすめ row inside Slack's emoji picker -->
 
-ログイン状態を保つ専用プロファイルで、拡張を読み込ませて開く。
+Status: a working prototype the author uses daily. Not published to the Chrome
+Web Store. No license yet.
 
-```sh
-agent-browser --session slackjev --headed \
-  --profile ~/.local/state/slack-jev-reactions/profile \
-  --extension ~/ghq/github.com/yamadashy/life/project/emoji-suggest/extension \
-  open https://app.slack.com/client/TFL6W9953/CN1RQL0TA
-```
+## Install
 
-初回は拡張の設定画面（`chrome-extension://<ID>/src/options.html`）で API キーを保存する。
-ID は `curl -s localhost:<port>/json/list` で拾える（port は `agent-browser ... get cdp-url`）。
+1. Clone the repo. No build step is required — the popup's build output is
+   committed.
+2. Open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**
+   and select the `extension/` directory.
+3. Click the toolbar icon and paste a TypeSafe API key into the popup. The key
+   is stored in `chrome.storage.local` and is only ever read by the service
+   worker.
+4. Open Slack in the browser (not the desktop app — see Known limits) and hover
+   a message.
 
-ポップアップだけビルドが要る。中身を変えたら:
+The extension ships a `key` in its manifest, so the extension ID is stable at
+`alemihiajbabhgfdgogganjphfkppeek` no matter where the folder lives. The private
+half is deliberately outside the repo at
+`~/.local/state/slack-emoji-suggest/key.pem` and must stay there.
 
-```sh
-cd popup && npm install && npm run build   # → extension/popup/ に出力（コミットする）
-npm run dev                                 # 素のブラウザで見た目だけ確認（chrome.* はモック）
-```
+## How it works
 
-`extension/popup/` はビルド結果だがコミットしている。clone してすぐ「パッケージ化されていない
-拡張機能を読み込む」が通るようにするため。`popup/node_modules` だけ gitignore。
+Nothing knows about more than one thing. One file knows Slack's DOM, one file
+knows the ranking model, and the layer in between knows neither.
 
-**コードを変えたときの読み込み直し。ブラウザは再起動しなくていい。**
-
-1. Service Worker のターゲットで `chrome.runtime.reload()` を実行する（CDP の `Runtime.evaluate`）
-2. Slack のタブを `Page.reload` する（古い content script は拡張の再読み込みで孤児になる）
-
-これで新しいコードが確実に載る（0.4.2 で確認）。chrome://extensions の再読み込みボタンでも
-同じだが、そちらは拡張が無効化されることがあった。**ブラウザの再起動は不要。**
-
-自動操作するときは**ウィンドウを前面に出さないこと**（同じ Mac で作業しているので奪われると困る）。
-`Page.bringToFront` / `Target.activateTarget` / AppleScript の activate は使わない。
-Slack はページが隠れていると判断するとホバーのツールバーを出さないが、
-`Emulation.setFocusEmulationEnabled({enabled:true})` をページのセッションに掛ければ、
-ウィンドウは背面のままページだけが「表示中・フォーカスあり」になる（`document.visibilityState`
-が `visible`、`hasFocus()` が true になるのを確認済み）。スクリーンショットは
-`Page.captureScreenshot` で前面化せずに撮れる。
-
-拡張 ID は**フォルダのパスから決まる**ので、プロジェクトを改名すると ID が変わり、
-`chrome.storage.local`（API キーを含む）が空になる。改名したら API キーを入れ直す。
-
-## 仕組み
-
-層をまたぐ知識を持たせていない。Slack を知っているのは 1 ファイル、Jev を知っているのも 1 ファイル。
-
-| ファイル | 役割 |
+| Path | Responsibility |
 | --- | --- |
-| `src/sites/slack.js` | Slack の DOM を知っている唯一の場所。セレクタ、ホバー/ピッカー検知、リアクション実行 |
-| `src/content.js` | サイト非依存。デバウンス、キャッシュ、「おすすめ」行の描画、閾値と件数 |
-| `src/providers/jev.js` | Jev を知っている唯一の場所。エンドポイント、質問文、回答の読み取り |
-| `src/providers/index.js` | どのモデルを使うかの選択。今は `jev` だけ |
-| `src/background.js` | API キーを持つ唯一の場所。LRU キャッシュ、重複リクエストの合流、カスタム絵文字の保存 |
-| `src/candidates.js` | 候補リストとパーサ、カスタム+標準のマージ、名前一致、リクエスト分割。サイトにもモデルにも依存しない |
-| `popup/`（→ `extension/popup/`） | ツールバーのポップアップ。React + Tailwind + shadcn/ui。ここだけビルドが要る |
+| `extension/src/sites/slack.js` | The only file that knows Slack's DOM: selectors, hover and picker detection, custom-emoji harvesting, performing a reaction |
+| `extension/src/content.js` | Site-neutral: debounce, cache, rendering the suggestion row, threshold and count |
+| `extension/src/providers/jev.js` | The only file that knows Jev: endpoint, question wording, reading answers |
+| `extension/src/providers/index.js` | Picks the provider. Only `jev` exists today |
+| `extension/src/background.js` | The only holder of the API key. LRU cache, request de-duplication, custom-emoji storage |
+| `extension/src/candidates.js` | Candidate list and parser, merging custom with standard, name matching, request splitting |
+| `popup/` → `extension/popup/` | Toolbar popup. React + Tailwind + shadcn/ui. The only part with a build |
 
-動きはこう。
+### Suggesting
 
-1. メッセージにポインタが **250ms 止まったら**、本文を background へ送って先読みする。
-   掃くように動かしても飛ばない
-2. ツールバーの「リアクションを追加...」を **capture フェーズで捕まえて**、どのメッセージの
-   ピッカーが開くのかを覚えておく。Slack はピッカーからメッセージを辿れないので、
-   知る機会はこのクリックしかない
-3. ピッカーが出たら、検索ボックスの下・「よく使う絵文字」の上に「おすすめ」行を差し込む。
-   先読みが間に合っていれば即表示、まだなら placeholder
-4. 候補をクリックすると、**ピッカー自身の検索ボックスにショートコードを打ち込んで**、
-   絞り込まれた 1 件を click する。グリッドは仮想化されていてスクロール範囲外の絵文字には
-   DOM が無いので、検索を経由すれば必ず描画された状態で掴める。Slack の API トークンは使わない
+1. When the pointer rests on a message for **250 ms**, the text is sent to the
+   service worker and ranked ahead of time. Sweeping the mouse down a channel
+   fires nothing.
+2. The click on the toolbar's "リアクションを追加..." button is caught in the
+   **capture phase**, which is the only chance to learn which message the picker
+   is about to belong to — Slack gives the picker no link back to its message.
+3. When the picker appears, a row is inserted between the search box and
+   「よく使う絵文字」. If the prefetch has landed it paints immediately, otherwise
+   it shows placeholders.
+4. Clicking a suggestion types the shortcode into **the picker's own search
+   box** and clicks the single match. The grid is virtualised, so an emoji that
+   is not scrolled into view has no DOM node to click; going through the search
+   guarantees one exists. No Slack API tokens are involved anywhere.
 
-セレクタは `src/sites/slack.js` の `SEL` に集約。全部 `data-qa` か ARIA で、ハッシュ付きの
-クラス名は使っていない（`data-qa` は Slack 自身の E2E テスト用なので比較的変わりにくい）。
-ピッカーだけ `data-qa="emoji-picker"` とハイフン、ボタンは `add_reaction` とアンダースコアで揺れている。
+Selectors live in one `SEL` object and are all `data-qa` attributes or ARIA
+roles, never hashed class names — `data-qa` is what Slack's own end-to-end tests
+use, so it changes less often. Note the inconsistency: the dialog is
+`data-qa="emoji-picker"` with a hyphen while the button is `add_reaction` with
+an underscore.
 
-MutationObserver は常駐させていない。ボタンのクリックからピッカーが現れるまでの数百 ms だけ
-`body` に張って、見つけたら切る。ホバーは委譲リスナー 1 個（Slack は行を再利用するので、
-行ごとに付けると漏れる）。
+No MutationObserver is left running. One is attached to `body` only for the few
+hundred milliseconds between the button click and the picker appearing, then
+disconnected. Hover uses a single delegated listener, because Slack recycles
+message rows as you scroll and per-row handlers leak.
 
-プライバシー: 本文が TypeSafe へ出るのは、そのメッセージにポインタを合わせたときと、
-ピッカーを開いたときだけ。チャンネルを走査することはない。
+### Ranking rule
 
-### カスタム絵文字を覚える
+Each candidate is scored independently (a per-emoji yes/no probability rather
+than one distribution over all of them, so several can score high at once). The
+row shows the top five, dropping anything below **0.5**.
 
-ワークスペースの絵文字は、Slack の DOM から集める。API も内部エンドポイントも叩かない。
-集める形は 2 つある。
+0.5 rather than the 0.8 that ordinary work updates suggest: a message like
+"本番環境へのデプロイが完了しました。エラーは出ていません。" scores `:ship:` 0.96 and
+`:white_check_mark:` 0.93, but a one-line idea memo tops out around 0.65, and an
+0.8 floor shows nothing at all on that kind of channel.
 
-**1. ピッカーが開いている間、見えているものを拾う（ただ乗り）**
-ユーザーがピッカーを開いたら、そこに描画されているカスタム絵文字をそのまま拾う。
-スクロールしてもタブを切り替えても拾い続けるので、カスタムタブを一度開けばそのタブは覚える。
-コストはゼロで、その日の最初のピッカーを役に立たせるのはこれ。
-新しい絵文字を覚えたら、その場で順位を付け直して行を差し替える（1 回だけ。無限ループ防止）。
+### Name matching
 
-**2. ピッカーを閉じた直後に、こっそり全部歩く**
-ユーザーがピッカーを開いた時点で「このワークスペースはまだ全部集めていない（または最後に
-全部集めてから 24 時間以上）」なら、**閉じた直後に**全走査する。見ているピッカーの中では
-やらない（カーソルの下でタブを切り替えてスクロールするのは邪魔なので）。
+If the message text says an emoji's name, that emoji leads the row whatever the
+model thought, and skips the score floor. "Claude Codeの絵文字つけてほしい" has to
+put `:claude-code:` first. This is a string match on text the worker already
+has — nothing extra is sent to the model.
 
-- **ページ読み込み時にはやらない。** Slack のタブはたいてい背面で復元され、背面のタブは
-  描画されないので仮想リストが 0 件しか返さず、黙って何も集まらない。実際その状態で
-  「1 件（最終取り込み: 未完了）」になった。ピッカーが開いたという事実が、
-  タブが前面でユーザーがそこに居る何よりの証拠になる
-- 開くのは**入力欄の絵文字ボタン**。同じピッカーが開くうえ、メッセージが絡まないので
-  手が滑ってもリアクションは付かない
-- 走査中は `<html>` にクラスを付けて、ピッカーを `opacity: 0` + `pointer-events: none` にする。
-  `display:none` や `visibility:hidden` では**レイアウトが無くなって仮想リストが 1 件も
-  描画しない**ので使えない。クラスを外すのはピッカーが閉じ切ってから（ちらつき防止）
-- 終わったらフォーカスと選択を戻す。入力中の下書きは前後で比較して、変わっていたら警告を出す
-- 途中でキーを打たれたら中断して返す。「まだ集めていない」状態は残るので、次に閉じたときに再挑戦
-- 標準絵文字と見分けるのは画像のホスト。カスタムは `emoji.slack-edge.com`、標準は
-  `production-standard-emoji-assets`。カスタムタブには Slack が全ワークスペースに配る
-  標準おまけ（bowtie, shipit など）も混ざるので、タブでは判別できない
+Both sides are normalised the same way (NFKC, lowercased, `-` and `_` treated as
+spaces) and compared two ways:
 
-「今は触らない方がいい」の判定は的を絞ってある。`[role="dialog"]` だけを見てはいけない
-（ハドルのコンテナと通知バナーが常に居るので、永遠に「取り込み中」になる）。
-`.ReactModal__Overlay` も駄目（閉じたピッカーの中身を抱えたまま残る）。
-見るのは `[role="dialog"][aria-modal="true"]` と `[role="menu"]` と、ピッカー自身。
+- **spaced**, requiring a non-alphanumeric boundary for ASCII names, which is
+  what stops `:pig:` firing inside "config". Japanese characters are not
+  alphanumeric, so 「Claude Codeの絵文字」 still matches despite the trailing の.
+- **tight**, separators removed, so "ClaudeCode" matches `:claude-code:`. There
+  is no boundary to check in this form, so it is allowed only for names that
+  contain a separator — those are long and specific enough that a chance
+  substring hit is not a real risk.
 
-保存は**ワークスペースごと**（team id は URL の `/client/<TEAM>/`）。仕事用と個人用を
-同時に開いているので、片方の語彙がもう片方に出てはいけない。0.3 より前の team id 無しの
-`customEmoji` は読まない（どのワークスペースのものか分からないため。消しはしない）。
+Names shorter than three characters are ignored. When several match, the longest
+wins the top slot (`claude-code` before `claude`, though both may appear).
 
-集めた絵文字は**説明なし**で候補に入る。名前そのものを意味として読ませる質問文を使うため。
+### Learning custom emoji
 
-候補が 1 リクエストに収まらないときは分割して並列に投げ、結果を連結する。スコアは
-絵文字ごとに独立していて全体で正規化されないので、分割しても順位は壊れない。
+Workspace emoji are read out of Slack's own UI. No API call, no internal
+endpoint, no session token. There are two paths.
 
-### 本文に名前が出ていたら、それが答え
+**Free-riding on an open picker.** While any picker is open — reaction or
+composer — every workspace emoji rendered in it is collected, and it keeps
+collecting as the user scrolls or switches tabs. Opening the custom tab once
+teaches the extension that whole tab. This is what makes the first picker of the
+day useful. If something new is learned, the current message is re-ranked once
+and the row is repainted in place (once only, or a scrolling user would loop
+it).
 
-「Claude Codeの絵文字つけてほしい」と書かれていたら、モデルのスコアが何であれ
-`:claude-code:` が先頭に来る。モデルには何も追加で送らない、ただの文字列一致。
+**A full pass after the picker closes.** Opening a picker marks the workspace as
+due if it has never been fully walked, or the last full walk was more than
+24 hours ago. The pass then runs *after* that picker closes — never inside the
+one the user is looking at, because switching its tab and scrolling it under
+their cursor would be obnoxious.
 
-両側を同じように正規化する（NFKC で全角を畳み、小文字化し、`-` と `_` を空白扱い）うえで、
-2 通り比べる。
+Details that are load-bearing:
 
-- **空白あり**: ASCII の名前は前後が英数字でないことを要求する（`:pig:` が "config" で
-  誤爆しないため）。日本語は英数字ではないので「Claude Codeの絵文字」の「の」でも当たる
-- **詰めた形**: 区切りを全部消して比較（"ClaudeCode" → `:claude-code:`）。
-  境界が見られないので、**区切りを含む名前にだけ**許す
+- **Never at page load.** A Slack tab is usually restored in the background, and
+  a background tab does not paint, so the virtualised grid renders zero cells
+  and the harvest silently "succeeds" with nothing. That really happened: the UI
+  reported one emoji and no completed sync. A picker being open is proof that
+  the tab is in front and the user is there.
+- The picker is opened from **the composer's emoji button**, not a message's. It
+  opens the identical dialog, but no message is involved, so nothing can post a
+  reaction by accident.
+- During the pass a class on `<html>` sets the picker to `opacity: 0` and
+  `pointer-events: none`. **Not `display: none` or `visibility: hidden`**: those
+  remove layout, and a virtualised grid with no geometry renders no cells at
+  all, so the harvest would come back empty. The class is removed only after the
+  dialog has actually gone, so there is no flash at either end.
+- Focus and selection are restored afterwards, and the composer draft is
+  compared before and after rather than assumed intact.
+- If the user starts typing mid-pass it aborts and hands control back. The
+  workspace stays "due" and the next picker close tries again.
+- Custom and standard emoji are told apart by **image host**:
+  `emoji.slack-edge.com` versus `production-standard-emoji-assets`. The tab is
+  not a signal — Slack's "custom" tab also contains the stock extras it ships to
+  every workspace (`bowtie`, `shipit`, and friends).
 
-3 文字未満の名前は無視。複数当たったら長いものが先（`claude-code` が `claude` より先、
-ただし両方出てよい）。当たったものは 0.5 の足切りを飛ばして先頭に置く。合計は 5 個のまま。
+The "is the user busy?" check is deliberately narrow, and two obvious versions of
+it were bugs:
 
-### ポップアップ
+- `[role="dialog"]` alone is useless. Slack keeps a huddle container and a
+  notification banner permanently mounted with that role, so the check reads
+  "busy" forever and the pass never runs.
+- `.ReactModal__Overlay` is just as bad: it outlives the dialog it wrapped,
+  still holding the closed picker's markup, so it reads "busy" forever after the
+  first picker of the session.
 
-ツールバーのアイコンを押すと出る 360px の小さい画面。設定画面（options page）は廃止した。
+What is actually checked: `[role="dialog"][aria-modal="true"]`, `[role="menu"]`,
+and the picker itself.
 
-- **このワークスペースで使う** のスイッチ。切ると、そのワークスペースでは本当に何もしない
-  （ホバーの先読みも、おすすめ行も、絵文字集めも）。仕事用の Slack を同時に開いているので、
-  「切ったのに一部だけ動いている」が無いようにしてある
-- ワークスペース名、覚えている絵文字の数と実物のプレビュー、最終更新、「もう一度集める」
-- API キーは**書き込み専用**。ポップアップへ鍵を返すメッセージは存在しない（`hasKey` だけ）
+Storage is **per workspace**, keyed by the team id from `/client/<TEAM>/` in the
+URL. Work and personal Slacks are often open side by side and one workspace's
+vocabulary must never be suggested in another. The pre-0.3 un-keyed `customEmoji`
+value is not read, since there is no safe workspace to attribute it to; it is
+left in storage rather than deleted.
 
-## 分かっていること
+Harvested emoji enter the candidate list **without descriptions** — the question
+asks the model to read the name itself as the meaning, which works well enough
+that writing a sentence for each of a few hundred emoji is unnecessary.
 
-ai-lab の `/jev` ページ「絵文字リアクション」タブ（`web/src/components/jev/EmojiTab.tsx`）で先に試した結果と、今回の実機での確認。質問文と絵文字の説明リストはそこから流用した。
+When the candidate list does not fit one request it is split and the parts run
+in parallel. Scores are per-emoji and never normalised across the set, so
+merging is plain concatenation.
 
-- 応答は 0.5 秒前後。ホバーツールバーが出た時点で問い合わせれば、ピッカーを開く頃には間に合う
-- Choice の選択肢は 1 問あたり 255 個まで（超えると 400）。255 個でも速度・精度は落ちなかった
-- 候補を複数出す用途には、絵文字ごとの Noul のほうが向く。Choice は確率の合計が 1 なので、1 個が勝つと他が沈む
-- 絵文字の説明は「Slack でその絵文字が何を意味するか」を英語で書くと効く。Jev は質問を字面どおりに読む
-- **Noul の甘さはメッセージの種類で変わる。** 仕事の報告（「本番環境へのデプロイが完了しました。
-  エラーは出ていません。」）なら :ship: 0.96 / :white_check_mark: 0.93 / :tada: 0.93 と 0.8 台が並ぶ。
-  一方 #memo-アイデア のような一行メモは全体が低く、「jevを使ってslack絵文字を出すやつ」で
-  最高 :smile: 0.65。閾値 0.8 だとこのチャンネルでは何も出ない。
-  **実装では 0.5 にした**（`src/content.js` の `MIN_SCORE`）
-- 一行メモでも中身は拾えている。「readable-messag は readable-plain-text にしたほうがいいかも。」
-  → :bulb: 0.78 / :thinking_face: 0.75 / :ok_hand: 0.69 / :+1: 0.67 / :eyes: 0.63
-- **名前だけのカスタム絵文字でも、ちゃんと題材を拾う。**
-  「Repomix の新バージョンをリリースしました」→ :shipit: 0.87 / :thumbsup_all: 0.80 / :repomix: 0.73。
-  「Claude Code でリファクタしたら一発で通った」→ :thumbsup_all: 0.84 / :shipit: 0.81 / :claude-code: 0.80
-- **説明つき（標準）と名前だけ（カスタム）のスコア差は小さい。** 上の 2 文で、最高値は
-  標準 0.96 / 0.87 に対しカスタム 0.87 / 0.84。平均は 0.428 / 0.341 と 0.426 / 0.422。
-  カスタムの平均が下がるのは、その話題と無関係な絵文字（bowtie, devin など）が多く混ざる
-  ぶんで、これは正しい挙動。**上位が不当に沈んではいないので、補正はかけていない**
-- コストは 1 候補あたり約 79 入力トークン（73 候補で 5,786、応答 228ms）。64k の枠なら
-  800 候補くらいまで 1 リクエストに入る計算。実装は 20,000 トークン／200 問で切って分割する
-- カスタム絵文字は取り込みに 3.4 秒（17 件、スクロール 1 回）。仮想リストの挙動は
-  標準タブで確認済みで、503 件をスクロール 6 回・1.8 秒で取り切れた（同時に DOM にあるのは 189 件）
-- **背面のタブでは仮想リストが描画されない。** ページ読み込み直後に集めようとすると
-  0 件で「成功」してしまう。ピッカーを閉じた直後に動かすのはこれが理由
-- `opacity: 0` にしても仮想リストは普通に描画・スクロールする。走査中の実画面を
-  スクリーンショットで確認済み（ピッカーは DOM に居て 20 件描画中、画面には何も出ていない）
+### Popup
 
-## 制約
+A 360px panel behind the toolbar icon. There is no options page.
 
-- Slack のデスクトップアプリは Electron なので Chrome 拡張を載せられない。ブラウザ版専用
-- Slack の DOM は公開 API ではないので、変わったらセレクタを直す
-- メッセージ本文を TypeSafe に送る。問い合わせはホバーとピッカーを開いたときだけにする
-- API キーは background 側で持ち、ページには渡さない
-- ホバーツールバーは、ウィンドウが前面に無い（`document.visibilityState === "hidden"`）と
-  Slack が出さない。自動操作で確認するときはウィンドウを可視にしてから
-- `agent-browser set viewport` を使うとホバーツールバーが出なくなる（タッチデバイス扱いに
-  なるものと思われる）。実機確認では使わない
-- おすすめ行のダークテーマは、オーナーの環境のスクリーンショットで確認済み。CSS は色を
-  直書きせず `currentColor` と半透明グレーだけで組んであるので、Slack のテーマに追従する
-- ポップアップの明暗は OS の `prefers-color-scheme` で切り替える。Chrome は
-  ポップアップにブラウザのテーマを伝えないので、これが一番近い手掛かり
+- A **per-workspace switch**. Off means off: no hover prefetch, no suggestion
+  row, no learning, no background pass.
+- Workspace name, how many emoji are remembered with a preview of the real
+  images, when they were last refreshed, and a button to refresh now.
+- The API key field is write-only.
 
-## これから
+## Privacy
 
-- 閾値（`MIN_SCORE`）と表示件数が決め打ち。ポップアップに出してもいい
-- 標準絵文字の候補リストとカスタム絵文字の説明は、UI から編集できなくなった（コードの
-  既定値を使う）。保存済みの値は今も読むので、必要なら編集 UI を戻せばいい
-- カスタム絵文字が数百あるワークスペースは未検証。分割の実装は入れたが、実際に 2 本以上
-  投げたことはまだ無い
-- ポップアップの「もう一度集める」は Slack のタブを前面に出してから走る。裏で走らせると
-  仮想リストが描画されないため。前面化が嫌なら、次にピッカーを閉じたときの自動走査に任せる
-- Discord 対応は `src/sites/` にもう 1 ファイル足せば届く形にしてある（まだ書いていない）
+- **Message text leaves the browser only for the message you are pointing at.**
+  It is sent when the pointer rests on a message for 250 ms, and when that
+  message's picker opens. Nothing scans a channel, and nothing is sent in the
+  background.
+- Text goes to the ranking provider's endpoint (`api.typesafe.ai`) and nowhere
+  else. Custom emoji are read from the page, never uploaded.
+- **The API key never reaches the page or the popup.** It lives in
+  `chrome.storage.local`, is read only by the service worker, and there is no
+  message that returns it — the popup can set it and ask `hasKey`, nothing more.
+- **The per-workspace switch is the real control.** With a workspace off,
+  verified at the service worker's own network layer, zero requests are made.
+- Permissions are `storage` plus host access to `api.typesafe.ai` and
+  `app.slack.com`. No `tabs` permission, which is why the popup cannot read the
+  URL of a tab that is not Slack.
+
+## Development
+
+### Popup
+
+The popup is the only part that is built. Everything else is plain JavaScript,
+loaded unbuilt.
+
+```sh
+cd popup
+npm ci
+npm run build   # writes extension/popup/ — commit the result
+npm run dev     # plain browser preview; chrome.* is mocked in src/lib/bridge.ts
+```
+
+`extension/popup/` is committed on purpose so that "Load unpacked" works
+straight from a clone. `popup/node_modules` is gitignored.
+
+All `chrome.*` access goes through `src/lib/bridge.ts`, which falls back to a
+mock when `chrome.runtime` is absent. That is what makes `npm run dev` useful
+for design work.
+
+### Reloading after a change
+
+Do not restart the browser. From a CDP session:
+
+1. Attach to the extension's service worker target and evaluate
+   `chrome.runtime.reload()`.
+2. `Page.reload` the Slack tab — the extension reload orphans the old content
+   script.
+
+**The stale service worker trap.** Chrome will happily keep running a previously
+installed service worker script. The only symptom is "the extension did not
+answer" or silence, and `chrome://extensions` shows no error. The tell is a
+response missing a field that only the new code produces. `chrome.runtime.reload()`
+fixes it. The reload button on `chrome://extensions` also works but has been
+observed to leave the extension disabled.
+
+### Test browser, without stealing focus
+
+The test browser shares a machine with a human, so nothing here may raise a
+window. Launch it in the background and attach:
+
+```sh
+CHROME="$HOME/.agent-browser/browsers/chrome-<version>/Google Chrome for Testing.app"
+open -g -n -a "$CHROME" --args \
+  --remote-debugging-port=9333 \
+  --user-data-dir="$HOME/.local/state/slack-jev-reactions/profile" \
+  --load-extension="$PWD/extension" \
+  https://app.slack.com/client/<TEAM>/<CHANNEL>
+```
+
+`-g` keeps it behind whatever the human is using. The profile path is historical
+and kept only because the Slack login lives in it.
+
+Then, from the CDP session:
+
+- **Never** call `Page.bringToFront`, `Target.activateTarget`, or AppleScript
+  `activate`.
+- Slack refuses to render the hover toolbar in a page it believes is hidden.
+  `Emulation.setFocusEmulationEnabled({enabled: true})` on the page session makes
+  the page report `visibilityState === "visible"` and `hasFocus() === true` while
+  the window stays in the background. The toolbar then renders normally.
+- Screenshots work without foregrounding via `Page.captureScreenshot`.
+
+### Things that break Slack's hover toolbar
+
+- A hidden or background page: see focus emulation above.
+- Setting a viewport override (`Emulation.setDeviceMetricsOverride`, which
+  `agent-browser set viewport` uses). Slack appears to treat the page as a touch
+  device and stops rendering hover affordances entirely. Do not use it against
+  Slack.
+- Moving the mouse away between locating the button and clicking it: the toolbar
+  is removed from the DOM and the click lands on whatever is underneath, which
+  is often the composer.
+
+## What is known about the ranking
+
+Measured against the live model, worth keeping because it explains the constants
+in the code.
+
+- A response takes roughly 0.5 s, so asking when the hover toolbar appears
+  leaves it ready by the time the picker opens.
+- Per-emoji independent scoring beats a single choice question. With one
+  distribution the probabilities sum to 1, so a single winner drowns out
+  everything else, and the point here is to offer several.
+- Descriptions work best written as "what this emoji means in Slack", in
+  English. The model reads the question literally.
+- **Leniency varies by message type.** Work updates put several candidates in the
+  0.8s; one-line idea memos top out around 0.65. Hence `MIN_SCORE = 0.5` in
+  `content.js`.
+- **Name-only custom emoji still find the subject.** "Repomix の新バージョンを
+  リリースしました" → `:shipit:` 0.87, `:thumbsup_all:` 0.80, `:repomix:` 0.73.
+  "Claude Code でリファクタしたら一発で通った" → `:thumbsup_all:` 0.84,
+  `:shipit:` 0.81, `:claude-code:` 0.80.
+- **The described-versus-name-only gap is small.** Across those two messages the
+  maxima were 0.96 / 0.87 for standard against 0.87 / 0.84 for custom, and the
+  means 0.428 / 0.341 and 0.426 / 0.422. The lower custom mean is mostly
+  irrelevant emoji scoring low, which is correct. No rescaling is applied.
+- Cost is about **79 input tokens per candidate** (73 candidates → 5,786 input
+  tokens, 228 ms). Roughly 800 candidates would fit one request inside a 64k
+  budget; the implementation splits at 20,000 tokens or 200 questions.
+- A full custom-emoji harvest took 3.4 s for 17 emoji. The virtualised grid was
+  exercised on a standard tab: 503 emoji in 6 scroll passes over 1.8 s, with
+  only 189 cells in the DOM at any moment.
+
+## Known limits and roadmap
+
+- **Browser Slack only.** The desktop app is Electron and cannot load Chrome
+  extensions.
+- **Slack's DOM is not a public API.** When it changes, selectors need fixing.
+  They are all in one object to make that a small job.
+- **Chunked requests are untested in practice.** No workspace tried so far has
+  enough emoji to force a second request. The merge is trivially correct
+  because scores are independent, but it has never actually run.
+- The score floor and the number of suggestions are hard-coded. They could
+  reasonably move into the popup.
+- The standard candidate list and per-emoji description overrides no longer have
+  an editing surface; defaults live in code. Stored values are still read, so an
+  editor could come back.
+- The popup's refresh button brings the Slack tab to the front before running,
+  because a background tab renders nothing. Leaving it to the automatic pass
+  after the next picker close avoids that.
+- **A Discord adapter** would be a second file under `src/sites/` implementing
+  the same small interface. Nothing above that layer should need to change.
+- **Other providers** likewise: one module exporting `rank()` and a label.
+- The suggestion row follows Slack's light and dark themes by using
+  `currentColor` and translucent greys rather than fixed colours. The popup
+  follows the OS `prefers-color-scheme`, since Chrome does not tell a popup the
+  browser theme.
