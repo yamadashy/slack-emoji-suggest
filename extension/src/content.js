@@ -77,6 +77,12 @@
     },
 
     async onPickerOpen({ message, picker }) {
+      // Free top-up: whatever workspace emoji are already on screen get merged
+      // into the stored set. No scrolling, no extra requests, and over time it
+      // keeps the list current between explicit syncs.
+      const visible = adapter.visibleCustomEmoji?.(picker);
+      if (visible?.length) chrome.runtime.sendMessage({ type: "mergeCustomEmoji", emoji: visible }, () => void chrome.runtime.lastError);
+
       const row = adapter.mountRow(picker);
       if (!row) return;
       const seq = ++renderSeq;
@@ -92,6 +98,21 @@
       if (res.ok) paint(row, res.suggestions);
       else paintMessage(row, res.error);
     },
+  });
+
+  // The options page cannot reach a page, so a sync request arrives here via
+  // the worker. The harvesting itself is the adapter's business.
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== "collectCustomEmoji") return false;
+    if (!adapter.collectCustomEmoji) {
+      sendResponse({ ok: false, error: "このサイトではカスタム絵文字を取り込めません。" });
+      return true;
+    }
+    adapter.collectCustomEmoji().then(
+      (res) => sendResponse(res),
+      (err) => sendResponse({ ok: false, error: err?.message || "取り込みに失敗しました。" }),
+    );
+    return true;
   });
 
   function shell(row) {
@@ -137,6 +158,25 @@
     }
   }
 
+  /**
+   * What the button shows: the workspace emoji's own image, a standard glyph,
+   * or -- last resort -- the shortcode text, shrunk to fit the same cell.
+   */
+  function face(s) {
+    if (s.url) {
+      const img = document.createElement("img");
+      img.className = "sjr-glyph sjr-glyph--img";
+      img.src = s.url;
+      img.alt = s.shortcode;
+      img.loading = "lazy";
+      return img;
+    }
+    const glyph = document.createElement("span");
+    glyph.className = s.glyph ? "sjr-glyph" : "sjr-glyph sjr-glyph--text";
+    glyph.textContent = s.glyph || s.shortcode;
+    return glyph;
+  }
+
   function button(s) {
     const b = document.createElement("button");
     b.type = "button";
@@ -144,10 +184,7 @@
     b.title = `${s.shortcode}  ${s.p.toFixed(2)}`;
     b.setAttribute("aria-label", `${s.shortcode} ${Math.round(s.p * 100)}%`);
 
-    const glyph = document.createElement("span");
-    glyph.className = s.glyph ? "sjr-glyph" : "sjr-glyph sjr-glyph--text";
-    glyph.textContent = s.glyph || s.shortcode;
-    b.appendChild(glyph);
+    b.appendChild(face(s));
 
     // A thin bar rather than a number: it reads at a glance and does not make
     // the row look like a table. The exact figure is in the tooltip.

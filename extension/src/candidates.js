@@ -142,8 +142,12 @@ const EMOJI_GLYPHS = {
   ":raised_eyebrow:": "\u{1F928}",
 };
 
-/** Providers cap how many things they can be asked about in one request. */
-const MAX_CANDIDATES = 255;
+/**
+ * A sanity cap on a hand-edited list, not a protocol limit. The per-request
+ * budget is handled by splitting (see `chunkByBudget`), so a long list costs
+ * more requests rather than failing.
+ */
+const MAX_CANDIDATES = 1000;
 
 const CANDIDATE_LINE = /^(:[\w+-]+:)\s+(.+)$/;
 
@@ -177,5 +181,93 @@ function parseCandidates(text) {
   return { candidates };
 }
 
-  self.Candidates = { DEFAULT_CANDIDATES, EMOJI_GLYPHS, MAX_CANDIDATES, parseCandidates };
+/**
+ * Merge the workspace's own emoji with the standard list.
+ *
+ * A candidate is `{shortcode, description, url}`. `description` is null for a
+ * workspace emoji with no override -- the provider reads that as "judge this
+ * one by its name alone", which is the whole point: a workspace can have
+ * hundreds of emoji and nobody is going to write a sentence for each. `url` is
+ * set only for workspace emoji, and only so the suggestion row can draw them.
+ *
+ * Workspace emoji come first. Nothing downstream depends on the order, but it
+ * makes the split into requests put them together.
+ */
+function buildCandidates({ standardText, customEmoji = [], customDescriptionsText = "" }) {
+  const standard = parseCandidates(standardText || DEFAULT_CANDIDATES);
+  if (standard.error) return { error: `絵文字の候補: ${standard.error}` };
+
+  const overrides = new Map();
+  if (customDescriptionsText.trim() !== "") {
+    const parsed = parseCandidates(customDescriptionsText);
+    if (parsed.error) return { error: `カスタム絵文字の説明: ${parsed.error}` };
+    for (const c of parsed.candidates) overrides.set(c.shortcode, c.description);
+  }
+
+  const seen = new Set();
+  const candidates = [];
+  for (const e of customEmoji) {
+    const shortcode = `:${e.name}:`;
+    if (seen.has(shortcode)) continue;
+    seen.add(shortcode);
+    candidates.push({ shortcode, description: overrides.get(shortcode) ?? null, url: e.url || null });
+  }
+  for (const c of standard.candidates) {
+    if (seen.has(c.shortcode)) continue;
+    seen.add(c.shortcode);
+    candidates.push({ shortcode: c.shortcode, description: c.description, url: null });
+  }
+  return { candidates };
+}
+
+/**
+ * Rough input-token cost of asking about one candidate.
+ *
+ * Deliberately crude and deliberately over-estimating: the only decision it
+ * feeds is where to split, and splitting one request too many costs half a
+ * second while overshooting the context window costs the whole answer.
+ * Calibrated against a measured 38 name-only questions ~= 2.8k tokens (~74
+ * each); the formula gives ~80 for those.
+ */
+function estimateTokens(candidate) {
+  const body = candidate.description ? candidate.description.length + 260 : 300;
+  return Math.ceil(body / 3.4) + 12;
+}
+
+/** Tokens per request. The documented ceiling is 64k; this leaves ample room
+ *  for the message itself, the response, and the estimate being wrong. */
+const TOKEN_BUDGET = 20000;
+/** Questions per request, independent of tokens: a large map is slower to
+ *  serialise on both ends and harder to reason about when something fails. */
+const MAX_QUESTIONS = 200;
+
+/** Split candidates into request-sized groups. One group is the common case. */
+function chunkByBudget(candidates) {
+  const chunks = [];
+  let current = [];
+  let tokens = 0;
+  for (const c of candidates) {
+    const cost = estimateTokens(c);
+    if (current.length > 0 && (tokens + cost > TOKEN_BUDGET || current.length >= MAX_QUESTIONS)) {
+      chunks.push(current);
+      current = [];
+      tokens = 0;
+    }
+    current.push(c);
+    tokens += cost;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+  self.Candidates = {
+    DEFAULT_CANDIDATES,
+    EMOJI_GLYPHS,
+    MAX_CANDIDATES,
+    parseCandidates,
+    buildCandidates,
+    estimateTokens,
+    chunkByBudget,
+    TOKEN_BUDGET,
+  };
 })();

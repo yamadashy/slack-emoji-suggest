@@ -18,9 +18,16 @@
  *                             picker and return it; idempotent per picker.
  *   react(shortcode)          add that reaction to the message the open picker
  *                             belongs to. Resolves true on success.
+ *   collectCustomEmoji()      walk the picker's custom-emoji tab and return
+ *                             every workspace emoji as `{name, url}`. Opens and
+ *                             restores the picker itself.
+ *   visibleCustomEmoji(picker)
+ *                             the workspace emoji already rendered in an open
+ *                             picker, with no scrolling and no tab switching.
  *
  * A `message` is `{id, text}`: `id` is stable and unique (channel + ts), `text`
- * is the plain body. Nothing else crosses the boundary.
+ * is the plain body. An emoji is `{name, url}`. Nothing else crosses the
+ * boundary.
  *
  * Slack's DOM is not a public API. Selectors are all in SEL below, and every
  * one of them is a `data-qa` attribute or an ARIA role rather than a hashed
@@ -48,12 +55,33 @@
     pickerInput: '[data-qa="emoji_picker_input"]',
     /** One emoji cell in the grid; data-name is the shortcode without colons. */
     pickerItem: '[data-qa="emoji_list_item"]',
+    /** The emoji button in the message composer. It opens the very same picker
+     *  as a message's "add reaction" button, which is why harvesting uses it:
+     *  no message is involved, so a stray click cannot post a reaction. */
+    composerEmojiButton: '[data-qa="emoji_toolbar_button"]',
+    /** The category tabs, and the workspace-emoji one (the Slack-logo tab). */
+    pickerTab: '[data-qa^="emoji_group_tab_"]',
+    pickerTabSelected: '[data-qa^="emoji_group_tab_"][aria-selected="true"]',
+    pickerTabCustom: '[data-qa="emoji_group_tab_slack-logo"]',
+    /** react-virtualized's scroll viewport for the grid. The one hashed-looking
+     *  name here is a library class, not a Slack one, so it changes only when
+     *  Slack changes libraries. */
+    pickerScroller: ".ReactVirtualized__List",
   };
+
+  /** Workspace emoji are served from this host; the standard set is not. That
+   *  is the only reliable way to tell them apart, because Slack's "custom" tab
+   *  also contains the stock extras it ships to every workspace. */
+  const CUSTOM_EMOJI_HOST = "emoji.slack-edge.com";
 
   /** How long to wait for the picker to mount after its button is clicked. */
   const PICKER_WAIT_MS = 3000;
   /** How long to wait for a searched-for emoji to appear in the grid. */
   const EMOJI_WAIT_MS = 2000;
+  /** One settle after each scroll step, for react-virtualized to render. */
+  const SCROLL_SETTLE_MS = 110;
+  /** Guard against an infinite loop if scrollTop ever stops behaving. */
+  const MAX_SCROLL_PASSES = 400;
 
   function getMessage(el) {
     const root = el?.closest?.(SEL.message);
@@ -115,6 +143,50 @@
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     setter.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** Every workspace emoji currently in the DOM, keyed by name. */
+  function harvestInto(found, root) {
+    for (const el of root.querySelectorAll(SEL.pickerItem)) {
+      const name = el.getAttribute("data-name");
+      const img = el.querySelector("img");
+      if (!name || !img || found.has(name)) continue;
+      if (!img.src.includes(CUSTOM_EMOJI_HOST)) continue;
+      found.set(name, img.src);
+    }
+  }
+
+  /**
+   * Scroll the virtualised grid from top to bottom, collecting as it renders.
+   *
+   * The grid only keeps the visible window in the DOM (measured: 189 cells at a
+   * time out of 503 on the smileys tab), so there is no list to read -- it has
+   * to be walked. Steps are three quarters of a viewport so consecutive windows
+   * overlap and nothing can fall between two passes.
+   */
+  async function scrollHarvest(picker, found) {
+    const scroller = picker.querySelector(SEL.pickerScroller);
+    if (!scroller) return 0;
+    let passes = 0;
+    scroller.scrollTop = 0;
+    await sleep(SCROLL_SETTLE_MS);
+    harvestInto(found, picker);
+    while (passes < MAX_SCROLL_PASSES) {
+      passes++;
+      const before = scroller.scrollTop;
+      scroller.scrollTop = Math.min(before + Math.floor(scroller.clientHeight * 0.75), scroller.scrollHeight);
+      await sleep(SCROLL_SETTLE_MS);
+      harvestInto(found, picker);
+      if (scroller.scrollTop <= before) break; // nothing more to scroll
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+        await sleep(SCROLL_SETTLE_MS * 2); // let the last window settle
+        harvestInto(found, picker);
+        break;
+      }
+    }
+    return passes;
   }
 
   self.SiteAdapter = {
@@ -182,6 +254,66 @@
       if (!item) return false;
       item.click(); // Slack adds the reaction and closes the picker itself
       return true;
+    },
+
+    /** Workspace emoji already on screen -- the 「よく使う絵文字」 row usually has
+     *  a few. Free of charge on every picker open, so it keeps the stored set
+     *  topped up between explicit syncs. */
+    visibleCustomEmoji(picker) {
+      const found = new Map();
+      harvestInto(found, picker);
+      return [...found].map(([name, url]) => ({ name, url }));
+    },
+
+    /**
+     * Walk the whole custom-emoji tab.
+     *
+     * Opens the picker from the *composer's* emoji button rather than a
+     * message's, so nothing here can post a reaction by accident, then puts
+     * everything back: the tab that was selected before, and the picker closed
+     * if it was closed to begin with.
+     */
+    async collectCustomEmoji() {
+      const started = Date.now();
+      const openedByUs = !document.querySelector(SEL.picker);
+      let picker = document.querySelector(SEL.picker);
+
+      if (openedByUs) {
+        const trigger = document.querySelector(SEL.composerEmojiButton);
+        if (!trigger) return { ok: false, error: "絵文字ピッカーを開くボタンが見つかりませんでした。" };
+        trigger.click();
+        picker = await waitForPicker();
+        if (!picker) return { ok: false, error: "絵文字ピッカーが開きませんでした。" };
+      }
+
+      const previousTab = picker.querySelector(SEL.pickerTabSelected)?.getAttribute("data-qa") || null;
+      const scroller = picker.querySelector(SEL.pickerScroller);
+      const previousScroll = scroller ? scroller.scrollTop : 0;
+
+      try {
+        const customTab = picker.querySelector(SEL.pickerTabCustom);
+        if (!customTab) return { ok: false, error: "カスタム絵文字のタブが見つかりませんでした。" };
+        customTab.click();
+        await sleep(700); // the tab swap re-mounts the grid
+
+        const found = new Map();
+        const passes = await scrollHarvest(picker, found);
+        return {
+          ok: true,
+          emoji: [...found].map(([name, url]) => ({ name, url })),
+          ms: Date.now() - started,
+          passes,
+        };
+      } finally {
+        // Leave the picker exactly as it was found.
+        if (openedByUs) {
+          document.querySelector(SEL.composerEmojiButton)?.click();
+        } else {
+          if (previousTab) picker.querySelector(`[data-qa="${previousTab}"]`)?.click();
+          const s = picker.querySelector(SEL.pickerScroller);
+          if (s) s.scrollTop = previousScroll;
+        }
+      }
     },
   };
 })();

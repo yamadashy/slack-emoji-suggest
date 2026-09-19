@@ -22,11 +22,46 @@ const MODEL = "jev-latest";
 const LABEL = "TypeSafe Jev";
 
 /**
+ * The question for an emoji that comes with a description.
+ *
+ * Kept in English: the descriptions are English and the wording was tuned that
+ * way. Jev reads instructions literally, so this is behaviour, not prose.
+ */
+function describedInstruction(c) {
+  return (
+    `\`state.message\` is a message posted in a Slack channel. Would reacting to it ` +
+    `with the emoji ${c.shortcode} be natural and appropriate here, given that ` +
+    `${c.shortcode} is used on Slack to mean: ${c.description}. Judge this emoji on ` +
+    `its own — other emoji may also be appropriate at the same time.`
+  );
+}
+
+/**
+ * The question for a workspace emoji with nothing but a name.
+ *
+ * A workspace can have hundreds of these and nobody will write a sentence for
+ * each, so the question has to carry the missing context itself: that the name
+ * is probably romanised Japanese or English slang, and that the name *is* the
+ * meaning. Verbatim from the wording that was measured to rank 38 invented
+ * names (naruhodo, otsukaresama, kakuninchuu, shipit, lgtm...) sensibly.
+ */
+function nameOnlyInstruction(c) {
+  const name = c.shortcode.replace(/^:|:$/g, "");
+  return (
+    `\`message\` was posted in a Japanese workplace Slack. The workspace has a ` +
+    `custom emoji named :${name}: (custom emoji names are usually romanized ` +
+    `Japanese words or English slang, and the emoji means what its name says). ` +
+    `Would reacting to \`message\` with :${name}: be natural and appropriate?`
+  );
+}
+
+/**
  * Score every candidate for one message.
  *
  * @param {object} args
  * @param {string} args.message      the message text being reacted to
- * @param {{shortcode: string, description: string}[]} args.candidates
+ * @param {{shortcode: string, description: ?string}[]} args.candidates
+ *   `description: null` means "judge it by its name alone".
  * @param {string} args.apiKey
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<{shortcode: string, p: number}[]>}
@@ -39,11 +74,7 @@ async function rank({ message, candidates, apiKey, signal }) {
   candidates.forEach((c, i) => {
     questions[`noul_${i}`] = {
       type: "noul",
-      instructions:
-        `\`state.message\` is a message posted in a Slack channel. Would reacting to it ` +
-        `with the emoji ${c.shortcode} be natural and appropriate here, given that ` +
-        `${c.shortcode} is used on Slack to mean: ${c.description}. Judge this emoji on ` +
-        `its own — other emoji may also be appropriate at the same time.`,
+      instructions: c.description ? describedInstruction(c) : nameOnlyInstruction(c),
     };
   });
 
@@ -63,13 +94,17 @@ async function rank({ message, candidates, apiKey, signal }) {
   if (!r.ok) throw new Error(await describe(r));
 
   const body = await r.json();
-  return candidates
+  const ranked = candidates
     .map((c, i) => {
       const a = body?.answers?.[`noul_${i}`];
       return a && typeof a.noul === "number" ? { shortcode: c.shortcode, p: a.noul } : null;
     })
     .filter((x) => x !== null)
     .sort((a, b) => b.p - a.p);
+  // Measured cost, hung off the array rather than wrapped in an object so the
+  // documented return type stays "the ranked list". Optional for callers.
+  ranked.usage = body?.usage || null;
+  return ranked;
 }
 
 /** Turn a failed response into a sentence worth reading. */

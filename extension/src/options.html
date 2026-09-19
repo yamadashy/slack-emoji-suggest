@@ -87,10 +87,30 @@
       キーはこのブラウザのローカル領域にだけ保存され、ページ側のスクリプトには渡りません。
     </p>
 
-    <h2>絵文字の候補</h2>
+    <h2>カスタム絵文字</h2>
+    <p class="note">
+      ワークスペースの絵文字を Slack の画面から取り込んで、候補に加えます。取り込みは絵文字ピッカーを
+      開いて一覧を読むだけで、Slack の API は呼びません。Slack のタブを開いた状態で実行してください。
+    </p>
+    <div class="row">
+      <button id="sync-emoji" type="button">カスタム絵文字を取り込む</button>
+      <span class="status" id="sync-status"></span>
+    </div>
+
+    <p class="note" style="margin-top: 16px">
+      名前だけで意味が伝わらないもの（人の顔など）は、ここで説明を足せます。1 行 1 件、
+      <code>:name: 説明</code>。書かなかった絵文字は名前だけで判断されます。
+    </p>
+    <textarea id="custom-descriptions" spellcheck="false" style="min-height: 120px"
+      placeholder=":buchou: the face of our department head, used to mean approval"></textarea>
+    <div class="row">
+      <button id="save-custom-descriptions" type="button">保存する</button>
+      <span class="status" id="custom-descriptions-status"></span>
+    </div>
+
+    <h2>標準の絵文字の候補</h2>
     <p class="note">
       1 行 1 件、<code>:shortcode: 説明</code> の形式。説明はモデルがそのまま読むので英語のままが無難です。
-      ワークスペース独自の絵文字も行を足せば候補になります。
     </p>
     <textarea id="candidates" spellcheck="false"></textarea>
     <div class="row">

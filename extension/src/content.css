@@ -9,29 +9,34 @@
  */
 
 .sjr-row {
-  padding: 8px 12px 10px;
+  padding: 4px 0 8px;
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
 }
 
+/* Measured against Slack's own 「よく使う絵文字」 heading so the two read as one
+   list: 13px/700, a 26px line box, and text starting 20px in. */
 .sjr-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  opacity: 0.62;
-  margin-bottom: 6px;
+  line-height: 26px;
+  padding: 0 20px;
   color: currentColor;
 }
 
+/* 15px is where Slack's own grid cells start, so the first suggestion lines up
+   with the first emoji of the section below. */
 .sjr-body {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: 0;
   flex-wrap: wrap;
   min-height: 34px;
+  padding: 0 15px;
 }
 
 .sjr-body--status {
   align-items: center;
+  gap: 4px;
 }
 
 .sjr-item {
@@ -60,6 +65,15 @@
   font-size: 22px;
   line-height: 24px;
   height: 24px;
+}
+
+/* A workspace emoji draws its own image, at the size Slack uses in the grid. */
+.sjr-glyph--img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+  margin: 1px 0;
 }
 
 /* A workspace emoji with no glyph falls back to its shortcode text, which has
