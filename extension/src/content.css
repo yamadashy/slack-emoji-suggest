@@ -31,17 +31,6 @@ html.sjr-harvesting .ReactModal__Content {
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
 }
 
-/* A name-matched suggestion: the message said this emoji's name, so it leads
-   the row regardless of score. A hairline underline marks it without adding a
-   second visual language to a row that is five emoji wide. */
-.sjr-item--matched .sjr-bar__fill {
-  opacity: 0.85;
-}
-
-.sjr-item--matched {
-  box-shadow: inset 0 -2px 0 rgba(127, 127, 127, 0.45);
-}
-
 /* Measured against Slack's own 「よく使う絵文字」 heading so the two read as one
    list: 13px/700, a 26px line box, and text starting 20px in. */
 .sjr-label {
@@ -113,23 +102,6 @@ html.sjr-harvesting .ReactModal__Content {
   word-break: break-all;
   text-align: center;
   overflow: hidden;
-}
-
-.sjr-bar {
-  display: block;
-  width: 24px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(127, 127, 127, 0.28);
-  overflow: hidden;
-}
-
-.sjr-bar__fill {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.45;
 }
 
 .sjr-status {

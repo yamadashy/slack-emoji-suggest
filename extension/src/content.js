@@ -22,8 +22,8 @@
    * errors" scores :ship: 0.96, :white_check_mark: 0.93, :tada: 0.93. Short
    * idea memos score far lower across the board -- a one-line memo topped out
    * at 0.65 -- so an 0.8 floor shows nothing at all on a memo channel. The
-   * floor exists to drop junk, and with only five slots and a visible
-   * probability bar, 0.5 does that without silencing whole channels.
+   * floor exists to drop junk, and with only five slots, 0.5 does that
+   * without silencing whole channels.
    */
   const MIN_SCORE = 0.5;
   const MAX_SUGGESTIONS = 5;
@@ -345,16 +345,8 @@
 
     b.appendChild(face(s));
 
-    // A thin bar rather than a number: it reads at a glance and does not make
-    // the row look like a table. The exact figure is in the tooltip.
-    const bar = document.createElement("span");
-    bar.className = "sjr-bar";
-    const fill = document.createElement("span");
-    fill.className = "sjr-bar__fill";
-    fill.style.width = `${Math.round(s.p * 100)}%`;
-    bar.appendChild(fill);
-    b.appendChild(bar);
-
+    // No bar or number under the emoji: the row should read like Slack's own
+    // sections. The score stays in the tooltip for anyone curious.
     b.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
