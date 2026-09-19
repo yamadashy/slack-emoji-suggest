@@ -37,10 +37,60 @@
   let hoveredId = null;
   /** Bumped on every render; a late answer for an older render is dropped. */
   let renderSeq = 0;
+  /** Set while a background pass runs, so the user can cut it short. */
+  let harvestAbort = false;
+  let harvesting = false;
+
+  const workspace = adapter.workspaceId?.() || null;
+
+  /**
+   * The privacy switch, read straight from storage.
+   *
+   * When a workspace is off, nothing happens for it at all: no hover prefetch,
+   * no suggestion row, no learning, no background pass. The owner keeps work
+   * Slacks open alongside personal ones, so "off" has to mean off, not "off
+   * except for the part that already sent the message somewhere".
+   *
+   * Read synchronously-ish at startup and kept current by the storage event,
+   * so flipping the switch takes effect without reloading the tab.
+   */
+  let enabled = true;
+  chrome.storage.local.get("workspaceEnabled", (s) => {
+    if (workspace) enabled = s?.workspaceEnabled?.[workspace] !== false;
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.workspaceEnabled || !workspace) return;
+    enabled = changes.workspaceEnabled.newValue?.[workspace] !== false;
+  });
+
+  // If the user starts typing mid-pass, hand the UI straight back. Pointer
+  // events are deliberately not included: the pass runs right after a click
+  // (the one that dismissed their picker), so treating every click as an
+  // interruption would abort it every single time.
+  document.addEventListener(
+    "keydown",
+    () => {
+      if (harvesting) harvestAbort = true;
+    },
+    { capture: true, passive: true },
+  );
+
+  function send(msg) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(msg, (res) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[emoji-suggest] runtime error:", chrome.runtime.lastError.message);
+          resolve(null);
+          return;
+        }
+        resolve(res);
+      });
+    });
+  }
 
   function request(message) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "suggest", key: message.id, text: message.text }, (res) => {
+      chrome.runtime.sendMessage({ type: "suggest", key: message.id, text: message.text, workspace }, (res) => {
         if (chrome.runtime.lastError) {
           // The user-facing sentence stays short; the real reason goes to the
           // console, because every cause here ("context invalidated" after a
@@ -60,6 +110,7 @@
 
   adapter.observe({
     onHover(message) {
+      if (!enabled) return;
       if (!message) {
         clearTimeout(hoverTimer);
         hoveredId = null;
@@ -77,11 +128,39 @@
     },
 
     async onPickerOpen({ message, picker }) {
-      // Free top-up: whatever workspace emoji are already on screen get merged
-      // into the stored set. No scrolling, no extra requests, and over time it
-      // keeps the list current between explicit syncs.
-      const visible = adapter.visibleCustomEmoji?.(picker);
-      if (visible?.length) chrome.runtime.sendMessage({ type: "mergeCustomEmoji", emoji: visible }, () => void chrome.runtime.lastError);
+      if (!enabled) return;
+      // Learn for free from whatever the picker shows, and keep learning while
+      // it stays open -- scrolling, switching to the workspace tab. This is
+      // what makes the very first picker of a session useful, before the
+      // background harvest has necessarily finished.
+      // A picker being open means the tab is foreground and the user is here:
+      // the right moment to decide the workspace needs a full pass, and the
+      // wrong moment to actually do one.
+      harvestAbort = true; // stop any pass still running; theirs takes priority
+      void noteHarvestOpportunity();
+
+      let reRanked = false;
+      adapter.watchPicker?.(
+        picker,
+        async (emoji) => {
+          const res = await send({ type: "mergeCustomEmoji", workspace, emoji });
+          // Only worth re-ranking if something genuinely new turned up, and
+          // only once per picker open, or a scrolling user would loop it.
+          if (!res?.ok || !res.added || reRanked || !message || !picker.isConnected) return;
+          reRanked = true;
+          cache.delete(message.id);
+          await send({ type: "invalidate", key: message.id });
+          const again = await request(message);
+          const row = adapter.mountRow(picker);
+          if (!row || !row.isConnected) return;
+          if (again?.ok) paint(row, again.suggestions);
+        },
+        () => void harvestAfterPickerClose(),
+      );
+
+      // The composer's picker has no message behind it: there is nothing to
+      // suggest for, only something to learn from.
+      if (!message) return;
 
       const row = adapter.mountRow(picker);
       if (!row) return;
@@ -100,20 +179,81 @@
     },
   });
 
-  // The options page cannot reach a page, so a sync request arrives here via
-  // the worker. The harvesting itself is the adapter's business.
+  // The popup cannot reach a page, so its requests arrive here via the worker.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "siteInfo") {
+      sendResponse({ ok: true, workspace, workspaceName: adapter.workspaceName?.() || null });
+      return true;
+    }
     if (msg?.type !== "collectCustomEmoji") return false;
     if (!adapter.collectCustomEmoji) {
       sendResponse({ ok: false, error: "このサイトではカスタム絵文字を取り込めません。" });
       return true;
     }
-    adapter.collectCustomEmoji().then(
-      (res) => sendResponse(res),
+    runHarvest({ hidden: msg.hidden !== false }).then(
+      (res) => sendResponse({ ...res, workspace }),
       (err) => sendResponse({ ok: false, error: err?.message || "取り込みに失敗しました。" }),
     );
     return true;
   });
+
+  /* ------------------------------------------------- automatic harvesting */
+
+  function runHarvest({ hidden }) {
+    harvestAbort = false;
+    harvesting = true;
+    return adapter
+      .collectCustomEmoji({ hidden, shouldAbort: () => harvestAbort })
+      .finally(() => {
+        harvesting = false;
+      });
+  }
+
+  /**
+   * The harvest is triggered by the user's own picker use, not by page load.
+   *
+   * Loading is the wrong moment: a Slack tab is usually restored in the
+   * background, where nothing paints and the virtualised grid renders zero
+   * cells, so a load-time harvest quietly collects nothing. Opening a picker,
+   * on the other hand, proves the tab is foreground and the user is right
+   * there.
+   *
+   * It does not run *inside* the picker they are looking at -- switching that
+   * to the workspace tab and scrolling it under their cursor would be rude.
+   * It waits for them to finish, then does its own pass invisibly.
+   */
+  let harvestDue = false;
+
+  async function noteHarvestOpportunity() {
+    if (!workspace || !adapter.collectCustomEmoji || harvestDue) return;
+    const state = await send({ type: "workspaceState", workspace });
+    if (state && !state.fresh) harvestDue = true;
+  }
+
+  async function harvestAfterPickerClose() {
+    if (!harvestDue || harvesting) return;
+    // Let Slack finish tearing the dialog down before opening another.
+    await new Promise((r) => setTimeout(r, 400));
+
+    const blocked = adapter.busyReason?.();
+    if (blocked) {
+      void send({ type: "recordHarvest", workspace, error: blocked });
+      return; // stays due; the next picker close gets another go
+    }
+
+    harvestAbort = false;
+    const res = await runHarvest({ hidden: true }).catch((err) => ({ ok: false, error: err?.message }));
+    if (res?.ok && !res.aborted && res.emoji?.length) {
+      await send({ type: "mergeCustomEmoji", workspace, emoji: res.emoji, full: true });
+      harvestDue = false;
+      return;
+    }
+    void send({
+      type: "recordHarvest",
+      workspace,
+      error: res?.aborted ? "操作が入ったので中断しました" : res?.error || "絵文字を読み取れませんでした",
+    });
+  }
 
   function shell(row) {
     row.textContent = "";
@@ -146,8 +286,25 @@
     body.appendChild(p);
   }
 
+  /**
+   * Pick the five to show.
+   *
+   * An emoji whose name the message actually said comes first and ignores the
+   * score floor -- if someone writes 「Claude Codeの絵文字つけてほしい」 then
+   * `:claude-code:` is the answer whatever the ranker thought. Longest name
+   * first among those, so `:claude-code:` outranks `:claude:` while both can
+   * still appear. The rest fill the row by score as before.
+   */
+  function choose(suggestions) {
+    const matched = suggestions
+      .filter((s) => s.matched)
+      .sort((a, b) => (b.matchLength || 0) - (a.matchLength || 0) || b.p - a.p);
+    const rest = suggestions.filter((s) => !s.matched && s.p >= MIN_SCORE);
+    return [...matched, ...rest].slice(0, MAX_SUGGESTIONS);
+  }
+
   function paint(row, suggestions) {
-    const top = suggestions.filter((s) => s.p >= MIN_SCORE).slice(0, MAX_SUGGESTIONS);
+    const top = choose(suggestions);
     if (top.length === 0) {
       paintMessage(row, "ぴったりの候補はありませんでした。");
       return;
@@ -180,9 +337,11 @@
   function button(s) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "sjr-item";
-    b.title = `${s.shortcode}  ${s.p.toFixed(2)}`;
-    b.setAttribute("aria-label", `${s.shortcode} ${Math.round(s.p * 100)}%`);
+    b.className = s.matched ? "sjr-item sjr-item--matched" : "sjr-item";
+    b.title = s.matched
+      ? `${s.shortcode}  ${s.p.toFixed(2)}  （本文に名前が出ています）`
+      : `${s.shortcode}  ${s.p.toFixed(2)}`;
+    b.setAttribute("aria-label", `${s.shortcode} ${Math.round(s.p * 100)}%${s.matched ? " 名前一致" : ""}`);
 
     b.appendChild(face(s));
 

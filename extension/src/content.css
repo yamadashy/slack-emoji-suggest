@@ -8,9 +8,38 @@
  * which are not stable.
  */
 
+/*
+ * While the extension walks the emoji list in the background, the picker it
+ * drives must not be seen. `opacity` rather than `display:none` or
+ * `visibility:hidden` on purpose: the grid is virtualised off scroll geometry,
+ * and an element that is not laid out has no geometry -- it would render zero
+ * cells and the harvest would come back empty. At opacity 0 the cells still
+ * lay out, render and scroll normally.
+ *
+ * `pointer-events:none` so a click during the harvest passes through to Slack
+ * rather than hitting an invisible dialog.
+ */
+html.sjr-harvesting [data-qa="emoji-picker"],
+html.sjr-harvesting .ReactModal__Overlay,
+html.sjr-harvesting .ReactModal__Content {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .sjr-row {
   padding: 4px 0 8px;
   border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+}
+
+/* A name-matched suggestion: the message said this emoji's name, so it leads
+   the row regardless of score. A hairline underline marks it without adding a
+   second visual language to a row that is five emoji wide. */
+.sjr-item--matched .sjr-bar__fill {
+  opacity: 0.85;
+}
+
+.sjr-item--matched {
+  box-shadow: inset 0 -2px 0 rgba(127, 127, 127, 0.45);
 }
 
 /* Measured against Slack's own 「よく使う絵文字」 heading so the two read as one

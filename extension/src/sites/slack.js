@@ -8,6 +8,9 @@
  * The adapter object, published as `self.SiteAdapter`:
  *
  *   name                      identifier, for logs
+ *   workspaceId()             the current workspace's id, or null. Emoji are
+ *                             stored per workspace: one workspace's custom
+ *                             emoji must never be suggested in another.
  *   observe({onHover, onPickerOpen})
  *                             start listening. `onHover(message|null)` fires
  *                             on every pointer move onto/off a message (the
@@ -18,12 +21,17 @@
  *                             picker and return it; idempotent per picker.
  *   react(shortcode)          add that reaction to the message the open picker
  *                             belongs to. Resolves true on success.
- *   collectCustomEmoji()      walk the picker's custom-emoji tab and return
- *                             every workspace emoji as `{name, url}`. Opens and
- *                             restores the picker itself.
- *   visibleCustomEmoji(picker)
- *                             the workspace emoji already rendered in an open
- *                             picker, with no scrolling and no tab switching.
+ *   watchPicker(picker, onEmoji)
+ *                             report workspace emoji as they render while the
+ *                             picker is open -- scrolling, switching tabs.
+ *                             Returns a stop function; self-stops on close.
+ *   collectCustomEmoji(opts)  walk the whole custom-emoji tab. `opts.hidden`
+ *                             makes the picker invisible for the duration;
+ *                             `opts.shouldAbort()` lets the caller cut it short.
+ *   isBusy()                  true when the user has something open or is
+ *                             mid-action, so a background harvest must not run.
+ *   hasComposer()             whether the harvest's entry point exists yet.
+ *   composerDraft()           the current draft text, for before/after checks.
  *
  * A `message` is `{id, text}`: `id` is stable and unique (channel + ts), `text`
  * is the plain body. An emoji is `{name, url}`. Nothing else crosses the
@@ -59,6 +67,10 @@
      *  as a message's "add reaction" button, which is why harvesting uses it:
      *  no message is involved, so a stray click cannot post a reaction. */
     composerEmojiButton: '[data-qa="emoji_toolbar_button"]',
+    /** The composer's text box, for the "is the user mid-sentence" check. */
+    composerInput: '[data-qa="message_input"]',
+    /** The workspace name in the sidebar header, for the popup to show. */
+    workspaceName: '[data-qa="ia4_sidebar_header__title"]',
     /** The category tabs, and the workspace-emoji one (the Slack-logo tab). */
     pickerTab: '[data-qa^="emoji_group_tab_"]',
     pickerTabSelected: '[data-qa^="emoji_group_tab_"][aria-selected="true"]',
@@ -67,12 +79,37 @@
      *  name here is a library class, not a Slack one, so it changes only when
      *  Slack changes libraries. */
     pickerScroller: ".ReactVirtualized__List",
+    /**
+     * Anything genuinely modal on screen: if one of these is up the user is
+     * busy and a background pass has to wait.
+     *
+     * Two things are deliberately *not* in this list, both of which broke it:
+     *
+     * - bare `[role="dialog"]`: Slack keeps a huddle container and a
+     *   notification banner permanently mounted with that role, so the check
+     *   read "busy" forever and the pass never ran;
+     * - `.ReactModal__Overlay`: it outlives the dialog it wrapped, still
+     *   carrying the closed picker's markup, so it reads "busy" forever after
+     *   the first picker of the session.
+     *
+     * What is left is what actually means "something is in front of the user".
+     * The open-picker check below covers the emoji picker itself.
+     */
+    anyOverlay: '[role="dialog"][aria-modal="true"], [role="menu"]',
   };
 
   /** Workspace emoji are served from this host; the standard set is not. That
    *  is the only reliable way to tell them apart, because Slack's "custom" tab
    *  also contains the stock extras it ships to every workspace. */
   const CUSTOM_EMOJI_HOST = "emoji.slack-edge.com";
+
+  /** Set on <html> while a background harvest runs; content.css uses it to make
+   *  the picker fully transparent. Deliberately opacity and not display or
+   *  visibility: the grid is virtualised off scroll geometry, and an element
+   *  that is not laid out has no geometry, so `display:none` would render zero
+   *  cells and harvest nothing. Verified that cells render and scroll at
+   *  opacity 0. */
+  const HARVESTING_CLASS = "sjr-harvesting";
 
   /** How long to wait for the picker to mount after its button is clicked. */
   const PICKER_WAIT_MS = 3000;
@@ -82,6 +119,18 @@
   const SCROLL_SETTLE_MS = 110;
   /** Guard against an infinite loop if scrollTop ever stops behaving. */
   const MAX_SCROLL_PASSES = 400;
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** True while this file is clicking Slack's own buttons, so the click
+   *  listener below does not mistake the harvest for the user. */
+  let selfDriving = false;
+
+  /** https://app.slack.com/client/<TEAM>/<CHANNEL> */
+  function workspaceId() {
+    const m = location.pathname.match(/\/client\/([A-Z0-9]+)/i);
+    return m ? m[1] : null;
+  }
 
   function getMessage(el) {
     const root = el?.closest?.(SEL.message);
@@ -124,6 +173,16 @@
     });
   }
 
+  /** Resolve once the picker is gone, so the hiding class can come off with no
+   *  flash of a dialog that is on its way out. */
+  async function waitForPickerGone(timeoutMs = 2000) {
+    const started = Date.now();
+    while (document.querySelector(SEL.picker) && Date.now() - started < timeoutMs) {
+      await sleep(50);
+    }
+    return !document.querySelector(SEL.picker);
+  }
+
   function waitFor(fn, timeoutMs) {
     return new Promise((resolve) => {
       const started = Date.now();
@@ -145,17 +204,20 @@
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  /** Every workspace emoji currently in the DOM, keyed by name. */
+  /** Every workspace emoji currently in the DOM under `root`, keyed by name.
+   *  Scans the whole picker, so 「よく使う絵文字」, search results and the custom
+   *  tab all count. Returns how many were new. */
   function harvestInto(found, root) {
+    let added = 0;
     for (const el of root.querySelectorAll(SEL.pickerItem)) {
       const name = el.getAttribute("data-name");
       const img = el.querySelector("img");
       if (!name || !img || found.has(name)) continue;
       if (!img.src.includes(CUSTOM_EMOJI_HOST)) continue;
       found.set(name, img.src);
+      added++;
     }
+    return added;
   }
 
   /**
@@ -166,7 +228,7 @@
    * to be walked. Steps are three quarters of a viewport so consecutive windows
    * overlap and nothing can fall between two passes.
    */
-  async function scrollHarvest(picker, found) {
+  async function scrollHarvest(picker, found, shouldAbort) {
     const scroller = picker.querySelector(SEL.pickerScroller);
     if (!scroller) return 0;
     let passes = 0;
@@ -174,6 +236,7 @@
     await sleep(SCROLL_SETTLE_MS);
     harvestInto(found, picker);
     while (passes < MAX_SCROLL_PASSES) {
+      if (shouldAbort?.()) break;
       passes++;
       const before = scroller.scrollTop;
       scroller.scrollTop = Math.min(before + Math.floor(scroller.clientHeight * 0.75), scroller.scrollHeight);
@@ -191,6 +254,39 @@
 
   self.SiteAdapter = {
     name: "slack",
+    workspaceId,
+
+    /** A human-readable workspace name, or null to fall back to the id. */
+    workspaceName() {
+      const el = document.querySelector(SEL.workspaceName);
+      const text = (el?.textContent || "").trim();
+      return text || null;
+    },
+
+    hasComposer() {
+      return !!document.querySelector(SEL.composerEmojiButton);
+    },
+
+    composerDraft() {
+      const el = document.querySelector(SEL.composerInput);
+      return el ? el.textContent : null;
+    },
+
+    /** Why it is a bad moment to touch the UI, or null when it is fine. */
+    busyReason() {
+      if (document.querySelector(SEL.picker)) return "ピッカーが開いています";
+      const overlay = [...document.querySelectorAll(SEL.anyOverlay)].find((e) => e.offsetParent !== null);
+      if (overlay) return "別のダイアログが開いています";
+      const composer = document.querySelector(SEL.composerInput);
+      if (composer && composer.contains(document.activeElement) && (composer.textContent || "").trim() !== "") {
+        return "入力中です"; // mid-sentence: never steal focus
+      }
+      return null;
+    },
+
+    isBusy() {
+      return this.busyReason() !== null;
+    },
 
     observe({ onHover, onPickerOpen }) {
       // One delegated listener instead of per-message handlers: Slack recycles
@@ -206,19 +302,80 @@
       // Capture phase so we learn which message the picker will belong to
       // before Slack's own handler opens it. Slack gives the picker no link
       // back to its message, so this click is the only place to find out.
+      //
+      // The composer's emoji button counts too: it opens the same picker, and
+      // an open picker is the signal that the tab is foreground and the user
+      // is present. Those come through with `message: null` -- there is
+      // nothing to suggest for, only something to learn from.
       document.addEventListener(
         "click",
         (e) => {
-          const button = e.target?.closest?.(SEL.addReaction);
-          if (!button) return;
-          const message = getMessage(button);
-          if (!message) return;
+          if (selfDriving) return; // our own harvest clicking that same button
+          const reactionButton = e.target?.closest?.(SEL.addReaction);
+          const composerButton = e.target?.closest?.(SEL.composerEmojiButton);
+          if (!reactionButton && !composerButton) return;
+          const message = reactionButton ? getMessage(reactionButton) : null;
+          if (reactionButton && !message) return;
           waitForPicker().then((picker) => {
             if (picker) onPickerOpen({ message, picker });
           });
         },
         { capture: true },
       );
+    },
+
+    /**
+     * Learn workspace emoji for free while the user has the picker open.
+     *
+     * Everything they scroll past or switch to gets collected, so opening the
+     * custom tab once teaches us that whole tab. Scoped to the picker element
+     * and torn down when it closes, so nothing outlives the dialog.
+     */
+    watchPicker(picker, onEmoji, onClose) {
+      const found = new Map();
+      let timer = 0;
+      let stopped = false;
+
+      const report = () => {
+        const before = found.size;
+        harvestInto(found, picker);
+        if (found.size > before) onEmoji([...found].map(([name, url]) => ({ name, url })));
+      };
+      const schedule = () => {
+        if (stopped) return;
+        clearTimeout(timer);
+        timer = setTimeout(report, 150);
+      };
+
+      report(); // whatever is on screen the moment it opens
+
+      // Scroll is capture-phase because the scrolling element is a descendant
+      // and scroll events do not bubble.
+      picker.addEventListener("scroll", schedule, { capture: true, passive: true });
+      picker.addEventListener("click", schedule, { capture: true, passive: true });
+      const obs = new MutationObserver(schedule);
+      obs.observe(picker, { childList: true, subtree: true });
+
+      // Self-destruct when the dialog goes away, so a forgotten stop() cannot
+      // leak an observer for the rest of the session. The close is also worth
+      // reporting: it is the moment the screen is the user's again.
+      const gone = new MutationObserver(() => {
+        if (picker.isConnected) return;
+        stop();
+        onClose?.();
+      });
+      gone.observe(document.body, { childList: true, subtree: true });
+
+      function stop() {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(timer);
+        obs.disconnect();
+        gone.disconnect();
+        picker.removeEventListener("scroll", schedule, { capture: true });
+        picker.removeEventListener("click", schedule, { capture: true });
+      }
+      return stop;
     },
 
     mountRow(picker) {
@@ -256,62 +413,83 @@
       return true;
     },
 
-    /** Workspace emoji already on screen -- the 「よく使う絵文字」 row usually has
-     *  a few. Free of charge on every picker open, so it keeps the stored set
-     *  topped up between explicit syncs. */
-    visibleCustomEmoji(picker) {
-      const found = new Map();
-      harvestInto(found, picker);
-      return [...found].map(([name, url]) => ({ name, url }));
-    },
-
     /**
      * Walk the whole custom-emoji tab.
      *
      * Opens the picker from the *composer's* emoji button rather than a
-     * message's, so nothing here can post a reaction by accident, then puts
-     * everything back: the tab that was selected before, and the picker closed
-     * if it was closed to begin with.
+     * message's, so nothing here can post a reaction by accident.
+     *
+     * With `opts.hidden` the picker is transparent for the whole of it, and the
+     * class only comes off once the dialog has actually gone, so there is no
+     * flash at either end. Focus and selection are captured before and put back
+     * after, and the composer's draft is compared before/after rather than
+     * assumed intact.
      */
-    async collectCustomEmoji() {
+    async collectCustomEmoji(opts = {}) {
+      const { hidden = false, shouldAbort } = opts;
       const started = Date.now();
       const openedByUs = !document.querySelector(SEL.picker);
       let picker = document.querySelector(SEL.picker);
 
-      if (openedByUs) {
-        const trigger = document.querySelector(SEL.composerEmojiButton);
-        if (!trigger) return { ok: false, error: "絵文字ピッカーを開くボタンが見つかりませんでした。" };
-        trigger.click();
-        picker = await waitForPicker();
-        if (!picker) return { ok: false, error: "絵文字ピッカーが開きませんでした。" };
-      }
-
-      const previousTab = picker.querySelector(SEL.pickerTabSelected)?.getAttribute("data-qa") || null;
-      const scroller = picker.querySelector(SEL.pickerScroller);
-      const previousScroll = scroller ? scroller.scrollTop : 0;
+      const previousActive = document.activeElement;
+      const draftBefore = this.composerDraft();
+      selfDriving = true;
+      if (hidden) document.documentElement.classList.add(HARVESTING_CLASS);
 
       try {
-        const customTab = picker.querySelector(SEL.pickerTabCustom);
-        if (!customTab) return { ok: false, error: "カスタム絵文字のタブが見つかりませんでした。" };
-        customTab.click();
-        await sleep(700); // the tab swap re-mounts the grid
-
-        const found = new Map();
-        const passes = await scrollHarvest(picker, found);
-        return {
-          ok: true,
-          emoji: [...found].map(([name, url]) => ({ name, url })),
-          ms: Date.now() - started,
-          passes,
-        };
-      } finally {
-        // Leave the picker exactly as it was found.
         if (openedByUs) {
-          document.querySelector(SEL.composerEmojiButton)?.click();
-        } else {
-          if (previousTab) picker.querySelector(`[data-qa="${previousTab}"]`)?.click();
-          const s = picker.querySelector(SEL.pickerScroller);
-          if (s) s.scrollTop = previousScroll;
+          const trigger = document.querySelector(SEL.composerEmojiButton);
+          if (!trigger) return { ok: false, error: "絵文字ピッカーを開くボタンが見つかりませんでした。" };
+          trigger.click();
+          picker = await waitForPicker();
+          if (!picker) return { ok: false, error: "絵文字ピッカーが開きませんでした。" };
+        }
+
+        const previousTab = picker.querySelector(SEL.pickerTabSelected)?.getAttribute("data-qa") || null;
+        const scroller = picker.querySelector(SEL.pickerScroller);
+        const previousScroll = scroller ? scroller.scrollTop : 0;
+
+        try {
+          const customTab = picker.querySelector(SEL.pickerTabCustom);
+          if (!customTab) return { ok: false, error: "カスタム絵文字のタブが見つかりませんでした。" };
+          customTab.click();
+          await sleep(700); // the tab swap re-mounts the grid
+
+          const found = new Map();
+          const passes = await scrollHarvest(picker, found, shouldAbort);
+          return {
+            ok: true,
+            aborted: !!shouldAbort?.(),
+            emoji: [...found].map(([name, url]) => ({ name, url })),
+            ms: Date.now() - started,
+            passes,
+          };
+        } finally {
+          // Leave the picker as it was found.
+          if (openedByUs) {
+            document.querySelector(SEL.composerEmojiButton)?.click();
+            await waitForPickerGone();
+          } else if (picker.isConnected) {
+            if (previousTab) picker.querySelector(`[data-qa="${previousTab}"]`)?.click();
+            const s = picker.querySelector(SEL.pickerScroller);
+            if (s) s.scrollTop = previousScroll;
+          }
+        }
+      } finally {
+        // Only now is un-hiding safe: the dialog is gone, so no frame can paint
+        // a half-torn-down picker.
+        if (hidden) document.documentElement.classList.remove(HARVESTING_CLASS);
+        selfDriving = false;
+        if (previousActive?.isConnected && typeof previousActive.focus === "function") {
+          try {
+            previousActive.focus({ preventScroll: true });
+          } catch {
+            /* focus is best-effort */
+          }
+        }
+        const draftAfter = this.composerDraft();
+        if (draftBefore !== draftAfter) {
+          console.warn("[emoji-suggest] composer draft changed during harvest", { draftBefore, draftAfter });
         }
       }
     },

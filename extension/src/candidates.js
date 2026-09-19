@@ -220,6 +220,77 @@ function buildCandidates({ standardText, customEmoji = [], customDescriptionsTex
   return { candidates };
 }
 
+/* ------------------------------------------------------- name matching --- */
+
+/**
+ * If the message says an emoji's name, that emoji is what the person meant.
+ *
+ * No model involved and nothing extra sent: it is a string match, and it beats
+ * any score. 「Claude Codeの絵文字つけてほしい」 has to lead with `:claude-code:`
+ * even when the ranker preferred ✨.
+ *
+ * Both sides are normalised the same way -- NFKC (so full-width Ｃｌａｕｄｅ folds
+ * onto ASCII), lowercased, `-`/`_` treated as spaces -- and then compared two
+ * ways:
+ *
+ * - **spaced**, with a word boundary for ASCII names. That is what stops
+ *   `:pig:` firing inside "config".
+ * - **tight**, separators removed, so "ClaudeCode" still hits `:claude-code:`.
+ *   Tight has no boundary to check, so it is allowed *only* for names that
+ *   contain a separator: those are long and specific, where a chance substring
+ *   hit is not a real risk.
+ */
+const MIN_MATCH_LENGTH = 3;
+
+function normalizeText(s) {
+  return s.normalize("NFKC").toLowerCase();
+}
+
+/** True when `name` (a shortcode without its colons) is named by the text. */
+function nameIsMentioned(name, spacedText, tightText) {
+  const n = normalizeText(name);
+  if (n.length < MIN_MATCH_LENGTH) return false;
+
+  const spacedName = n.replace(/[-_]+/g, " ").trim();
+  const hasSeparator = /[-_]/.test(n);
+  const isAscii = /^[\x20-\x7e]*$/.test(spacedName);
+
+  if (isAscii) {
+    // \b is unreliable next to non-ASCII, so the boundary is spelled out as
+    // "not a letter or digit" either side -- which Japanese text satisfies,
+    // letting 「Claude Codeの絵文字」 match despite the trailing の.
+    const escaped = spacedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(spacedText)) return true;
+  } else if (spacedText.includes(spacedName)) {
+    return true;
+  }
+
+  if (hasSeparator) {
+    const tightName = n.replace(/[-_\s]+/g, "");
+    if (tightName.length >= MIN_MATCH_LENGTH && tightText.includes(tightName)) return true;
+  }
+  return false;
+}
+
+/**
+ * Mark the ranked suggestions whose name the message mentions.
+ *
+ * Returns a new array; matched entries gain `matched: true` and `matchLength`,
+ * the latter so the caller can prefer `claude-code` over `claude` when both
+ * hit. Order is left alone -- presentation is the caller's business.
+ */
+function markNameMatches(suggestions, text) {
+  const spacedText = normalizeText(text || "").replace(/[-_]+/g, " ");
+  const tightText = spacedText.replace(/\s+/g, "");
+  return suggestions.map((s) => {
+    const name = s.shortcode.replace(/^:|:$/g, "");
+    if (!nameIsMentioned(name, spacedText, tightText)) return s;
+    return { ...s, matched: true, matchLength: name.length };
+  });
+}
+
+/* ------------------------------------------------------------- budget ---- */
+
 /**
  * Rough input-token cost of asking about one candidate.
  *
@@ -266,6 +337,7 @@ function chunkByBudget(candidates) {
     MAX_CANDIDATES,
     parseCandidates,
     buildCandidates,
+    markNameMatches,
     estimateTokens,
     chunkByBudget,
     TOKEN_BUDGET,

@@ -1,18 +1,35 @@
 {
   "manifest_version": 3,
   "name": "Emoji Suggest for Slack",
-  "version": "0.2.1",
+  "version": "0.4.3",
   "description": "Suggests emoji reactions for Slack messages using TypeSafe's Jev model.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://api.typesafe.ai/*", "https://app.slack.com/*"],
-  "background": { "service_worker": "src/background.js" },
-  "options_page": "src/options.html",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.typesafe.ai/*",
+    "https://app.slack.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://app.slack.com/*"],
-      "js": ["src/sites/slack.js", "src/content.js"],
-      "css": ["src/content.css"],
+      "matches": [
+        "https://app.slack.com/*"
+      ],
+      "js": [
+        "src/sites/slack.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Emoji Suggest"
+  }
 }
