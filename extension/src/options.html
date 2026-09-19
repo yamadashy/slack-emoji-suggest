@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>設定</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1d1c1d;
+        --muted: #616061;
+        --bg: #ffffff;
+        --field: #ffffff;
+        --border: rgba(127, 127, 127, 0.4);
+        --accent: #1264a3;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #d1d2d3;
+          --muted: #9a9b9d;
+          --bg: #1a1d21;
+          --field: #222529;
+          --border: rgba(127, 127, 127, 0.45);
+          --accent: #78b3e0;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 28px 24px 40px;
+        max-width: 720px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      h2 { font-size: 14px; margin: 28px 0 6px; }
+      p.note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+      label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+      input[type="password"], textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: var(--field);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+      textarea {
+        min-height: 260px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+      .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 7px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+      .status { font-size: 12px; color: var(--muted); min-height: 1.6em; }
+      .status.error { color: #e01e5a; }
+      .provider { font-size: 12px; color: var(--muted); font-weight: 400; }
+    </style>
+  </head>
+  <body>
+    <h1>絵文字リアクションのおすすめ</h1>
+    <p class="note">
+      メッセージ本文は、そのメッセージにポインタを合わせたときとピッカーを開いたときだけ送られます。
+      チャンネル全体を読みに行くことはありません。
+    </p>
+
+    <h2>API キー <span class="provider" id="provider-label"></span></h2>
+    <label for="api-key">API キー</label>
+    <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="未設定" />
+    <div class="row">
+      <button id="save-key" type="button">保存する</button>
+      <span class="status" id="key-status"></span>
+    </div>
+    <p class="note" style="margin-top: 10px">
+      キーはこのブラウザのローカル領域にだけ保存され、ページ側のスクリプトには渡りません。
+    </p>
+
+    <h2>絵文字の候補</h2>
+    <p class="note">
+      1 行 1 件、<code>:shortcode: 説明</code> の形式。説明はモデルがそのまま読むので英語のままが無難です。
+      ワークスペース独自の絵文字も行を足せば候補になります。
+    </p>
+    <textarea id="candidates" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="save-candidates" type="button">保存する</button>
+      <button id="reset-candidates" type="button" class="secondary">初期値に戻す</button>
+      <span class="status" id="candidates-status"></span>
+    </div>
+
+    <!-- Ordered plain scripts, same convention as the service worker: shared
+         files first, then the page's own. No build step anywhere. -->
+    <script src="./candidates.js"></script>
+    <script src="./providers/jev.js"></script>
+    <script src="./providers/index.js"></script>
+    <script src="./options.js"></script>
+  </body>
+</html>
