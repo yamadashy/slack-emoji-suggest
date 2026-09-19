@@ -1,9 +1,10 @@
-# Emoji Suggest for Slack
+# Slack Emoji Suggest
 
 A Chrome extension that suggests emoji reactions for a Slack message, including
 your workspace's own custom emoji. Hover a message and the extension asks a
 model to score every candidate emoji; open the reaction picker and the top five
-appear as a row above 「よく使う絵文字」, one click away. The interesting part is
+appear as their own section at the top of the emoji list, above
+「よく使う絵文字」, one click away. The interesting part is
 the custom emoji: a workspace's `:shipit:`, `:repomix:` or `:claude-code:` are
 usually the ones people actually reach for, and they are learned from Slack's
 own UI rather than from any API.
@@ -56,9 +57,10 @@ knows the ranking model, and the layer in between knows neither.
 2. The click on the toolbar's "リアクションを追加..." button is caught in the
    **capture phase**, which is the only chance to learn which message the picker
    is about to belong to — Slack gives the picker no link back to its message.
-3. When the picker appears, a row is inserted between the search box and
-   「よく使う絵文字」. If the prefetch has landed it paints immediately, otherwise
-   it shows placeholders.
+3. When the picker appears, a section titled 「Slack Emoji Suggest によるおすすめ」
+   is inserted at the top of the scrolling emoji list, above 「よく使う絵文字」. If
+   the prefetch has landed it paints immediately, otherwise it shows
+   placeholders. See [Where the section goes](#where-the-section-goes).
 4. Clicking a suggestion types the shortcode into **the picker's own search
    box** and clicks the single match. The grid is virtualised, so an emoji that
    is not scrolled into view has no DOM node to click; going through the search
@@ -74,6 +76,65 @@ No MutationObserver is left running. One is attached to `body` only for the few
 hundred milliseconds between the button click and the picker appearing, then
 disconnected. Hover uses a single delegated listener, because Slack recycles
 message rows as you scroll and per-row handlers leak.
+
+### Where the section goes
+
+The suggestions are their own section — own heading, own row of emoji — placed
+first in the picker's scrolling list, so the order reads: ours →
+「よく使う絵文字」 → 「スマイリー & 人」 → … Nothing is merged into or appended to
+Slack's frequently-used section. It scrolls away with the content like any other
+section, and carries no band, background or border of its own.
+
+Mechanically it is one `div` inserted as the scroll container's first child,
+ahead of the sized element react-virtualized positions its rows inside. That
+element keeps its own height, so the scrollable range simply grows by ours and
+every row keeps its offset relative to it. No React internals are touched and no
+handler of Slack's is wrapped; a Slack change can at worst leave the node
+unplaced.
+
+The obvious risk is windowing: react-virtualized picks which rows to render from
+`scrollTop`, which our 62px section shifts. Measured on the live list (about
+7,000px of content in a 309px viewport) it holds:
+
+- Cells cover the viewport at the top, at 25%, 50%, 90% and at the very bottom;
+  the final section stays reachable. The only places nothing covers the topmost
+  few pixels are where a section *heading* sits there, which is equally true
+  with the section removed.
+- The overscan react-virtualized already keeps is larger than the shift, which
+  is why nothing goes blank.
+- The category tabs turned out to **filter** the list rather than scroll to an
+  offset — each tab replaces the content and resets `scrollTop` — so there is no
+  jump to land wrong. Our section stays at the top of whichever category is
+  shown, including the custom tab.
+
+Two details needed handling:
+
+- **Slack's pinned heading.** Slack shows the current section's title in a
+  zero-height overlay pinned to the top of the list, and sets `visibility:
+  hidden` on the in-list copy while it does. With our section first, the pinned
+  「よく使う絵文字」 landed exactly on our heading. The adapter keeps a
+  `--sjr-sticky-offset` custom property equal to however much of our section is
+  still on screen, and CSS translates the pinned title by it; the offset reaches
+  zero exactly as our section scrolls out.
+- **Height is reserved in CSS**, not derived from content. The section is the
+  first thing in a virtualised list, so a height change would move every row
+  below it. Fixing it at 62px means the list never shifts when an answer lands,
+  and the pinned-heading offset is right from the first frame.
+
+While the search box has a query Slack replaces the list with results, so the
+section hides itself and the offset drops to zero; clearing the query brings
+both back. Hiding is safe mid-click — `react()` types into that same box, but
+the shortcode has already been read off the button by then.
+
+A picker-scoped MutationObserver re-seats the node if Slack re-renders the list
+out from under it. It moves the same node rather than recreating one, so there
+is no flicker and never a duplicate, and it is torn down with the dialog — there
+is no permanent observer on `body`.
+
+One deliberate limitation: our buttons do not carry Slack's
+`data-qa="emoji_list_item"`, so Slack's arrow-key grid navigation walks its own
+cells and never enters our section. That also keeps the harvest from collecting
+our own images as workspace emoji. The buttons are still reachable by Tab.
 
 ### Ranking rule
 
@@ -227,19 +288,22 @@ for design work.
 
 ### Reloading after a change
 
-Do not restart the browser. From a CDP session:
+**Relaunch the browser in the background.** That is the whole recipe, and the
+shortcuts do not work:
 
-1. Attach to the extension's service worker target and evaluate
-   `chrome.runtime.reload()`.
-2. `Page.reload` the Slack tab — the extension reload orphans the old content
-   script.
+- `chrome.runtime.reload()` leaves a `--load-extension` extension **disabled**
+  in Chrome for Testing 150, and the toggle on `chrome://extensions` will not
+  turn it back on.
+- The reload button on `chrome://extensions` does the same.
 
-**The stale service worker trap.** Chrome will happily keep running a previously
-installed service worker script. The only symptom is "the extension did not
-answer" or silence, and `chrome://extensions` shows no error. The tell is a
-response missing a field that only the new code produces. `chrome.runtime.reload()`
-fixes it. The reload button on `chrome://extensions` also works but has been
-observed to leave the extension disabled.
+Both fail quietly: the name in `chrome://extensions` updates from the new
+manifest, so it looks like a reload worked, while the old content script is
+still running — or none is. If a change seems not to have taken, check whether
+the extension is switched off before debugging the change itself.
+
+Chrome will also happily keep running a previously installed **service worker
+script** across reloads. The tell is a response missing a field only the new
+code produces. A background relaunch clears that too.
 
 ### Test browser, without stealing focus
 
@@ -257,6 +321,9 @@ open -g -n -a "$CHROME" --args \
 
 `-g` keeps it behind whatever the human is using. The profile path is historical
 and kept only because the Slack login lives in it.
+
+Relaunching this way is also how the extension is reloaded after a code change,
+per the section above.
 
 Then, from the CDP session:
 
@@ -329,6 +396,13 @@ in the code.
 - **A Discord adapter** would be a second file under `src/sites/` implementing
   the same small interface. Nothing above that layer should need to change.
 - **Other providers** likewise: one module exporting `rank()` and a label.
+- A Chrome Web Store listing may have to use the "… for Slack" form of the name.
+  Store titles that lead with another company's trademark have been taken down
+  before; the in-product name can stay as it is.
+- Slack's pinned section heading is driven by `scrollTop`, which our section
+  shifts by its own height, so during roughly 60px of scrolling just past the
+  section the pinned title names the next section slightly early. Cosmetic, only
+  while actively scrolling, and not worth reaching into Slack's logic for.
 - The suggestion row follows Slack's light and dark themes by using
   `currentColor` and translucent greys rather than fixed colours. The popup
   follows the OS `prefers-color-scheme`, since Chrome does not tell a popup the

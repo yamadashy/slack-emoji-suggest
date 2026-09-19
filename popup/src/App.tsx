@@ -30,7 +30,7 @@ export function App() {
         <span aria-hidden className="text-[17px] leading-none">
           ✨
         </span>
-        <h1 className="text-[15px] font-semibold tracking-tight">Emoji Suggest</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight">Slack Emoji Suggest</h1>
       </header>
 
       {failed && <Note>うまく読み込めませんでした。拡張機能を読み込み直してみてください。</Note>}

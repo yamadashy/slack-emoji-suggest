@@ -26,30 +26,66 @@ html.sjr-harvesting .ReactModal__Content {
   pointer-events: none !important;
 }
 
+/*
+ * Slack pins the current section's title in a zero-height overlay at the top of
+ * the list. Our section is the first thing in that list, so without this the
+ * pinned title sits right on top of our heading. The adapter keeps
+ * `--sjr-sticky-offset` equal to however much of our section is still on
+ * screen, which puts the pinned title back where its own in-list heading is and
+ * fades to zero as our section scrolls away.
+ */
+[data-qa="emoji-picker"].sjr-hosted .p-emoji_picker__sticky_header > * {
+  transform: translateY(var(--sjr-sticky-offset, 0px));
+}
+
+/*
+ * The section sits at the top of the picker's scrolling list, as the scroll
+ * container's first child, and is meant to be indistinguishable from one of
+ * Slack's own sections: no band, no background, no border, no separator. The
+ * only thing that marks it out is its heading text.
+ *
+ * The height is fixed rather than driven by content. The section is the first
+ * thing in a virtualised list, so a change in its height moves every row below
+ * it; reserving the space up front means the answer arriving, or failing, never
+ * makes the list jump under the pointer.
+ */
 .sjr-row {
-  padding: 4px 0 8px;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+  padding: 0 0 4px;
+  box-sizing: border-box;
+  /* 26 (heading) + 32 (one cell row) + 4 (padding). Fixed from the first frame,
+     before any suggestion has arrived, so the list never shifts under the
+     pointer when the answer lands -- and so the pinned-heading offset below is
+     correct immediately rather than after the first scroll. */
+  min-height: 62px;
 }
 
 /* Measured against Slack's own 「よく使う絵文字」 heading so the two read as one
-   list: 13px/700, a 26px line box, and text starting 20px in. */
+   list: 13px/700, a 26px line box, and text 21px from the picker's edge.
+   The section lives inside the scroll container, which is itself inset 8px, so
+   the padding here is that 21 minus the 8 -- the earlier 20px was measured when
+   the row sat outside the scroller and over-indented us by exactly the inset. */
 .sjr-label {
   font-size: 13px;
   font-weight: 700;
   line-height: 26px;
-  padding: 0 20px;
+  padding: 0 13px;
   color: currentColor;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 15px is where Slack's own grid cells start, so the first suggestion lines up
-   with the first emoji of the section below. */
+/* Slack's grid cells start 15px from the picker's edge; minus the scroll
+   container's own 8px inset that is 7px here, which puts our first suggestion
+   in the same column as the first emoji of every row below. The fixed height is
+   one cell row: five suggestions never wrap at this width. */
 .sjr-body {
   display: flex;
   align-items: flex-start;
   gap: 0;
-  flex-wrap: wrap;
-  min-height: 34px;
-  padding: 0 15px;
+  flex-wrap: nowrap;
+  height: 32px;
+  padding: 0 7px;
 }
 
 .sjr-body--status {
@@ -57,18 +93,24 @@ html.sjr-harvesting .ReactModal__Content {
   gap: 4px;
 }
 
+/* Slack's own grid cell measures 36x32 with a 6px radius; matching it is what
+   makes the section read as part of the list rather than as an add-on. */
 .sjr-item {
   appearance: none;
   border: 0;
   background: transparent;
-  padding: 3px 4px 4px;
+  padding: 0;
   border-radius: 6px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
   width: 36px;
+  height: 32px;
+  flex: 0 0 36px;
+  /* Slack's cells carry a 1px right margin, making the column pitch 37 rather
+     than 36. Without this our five drift a pixel further left per column. */
+  margin-right: 1px;
   color: currentColor;
   transition: background-color 0.1s ease;
 }

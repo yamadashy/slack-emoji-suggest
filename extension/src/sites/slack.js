@@ -79,6 +79,10 @@
      *  name here is a library class, not a Slack one, so it changes only when
      *  Slack changes libraries. */
     pickerScroller: ".ReactVirtualized__List",
+    /** The sized element react-virtualized absolutely-positions rows inside.
+     *  Our section is inserted immediately before it, so it becomes the first
+     *  thing in the scrollable area and scrolls away with the content. */
+    pickerInner: ".ReactVirtualized__Grid__innerScrollContainer",
     /**
      * Anything genuinely modal on screen: if one of these is up the user is
      * busy and a background pass has to wait.
@@ -252,6 +256,106 @@
     return passes;
   }
 
+  /**
+   * Put the section in its place: first child of the scroll container, right
+   * before the element react-virtualized sizes and positions rows inside.
+   *
+   * Returns false when the list has not mounted yet, which is the caller's cue
+   * to park the row somewhere harmless until it has.
+   */
+  function seatRow(picker, row) {
+    const scroller = picker.querySelector(SEL.pickerScroller);
+    const inner = scroller?.querySelector(SEL.pickerInner);
+    if (!scroller || !inner) return false;
+    if (row.parentElement !== scroller || row.nextElementSibling !== inner) {
+      scroller.insertBefore(row, inner);
+    }
+    return true;
+  }
+
+  /**
+   * Re-seat the section whenever Slack re-renders the list out from under it.
+   *
+   * One observer per picker, scoped to the picker and torn down with it -- no
+   * permanent observer on `body`. Re-seating is a no-op when the node is
+   * already in place, so an aggressive re-render costs nothing, and because the
+   * same node is moved rather than recreated there is never a second copy or a
+   * flicker.
+   */
+  function keepRowSeated(picker, row) {
+    if (picker.__sjrSeatObserver) return;
+    const obs = new MutationObserver(() => {
+      if (!picker.isConnected) return stop();
+      seatRow(picker, row);
+    });
+    obs.observe(picker, { childList: true, subtree: true });
+    function stop() {
+      obs.disconnect();
+      delete picker.__sjrSeatObserver;
+    }
+    picker.__sjrSeatObserver = stop;
+  }
+
+  /**
+   * Keep Slack's pinned section heading out of our section's way.
+   *
+   * Slack shows the current section's title in a zero-height overlay pinned to
+   * the top of the list, and hides the in-list copy while it does. Our section
+   * is now the first thing in that list, so at the top of the scroll the pinned
+   * 「よく使う絵文字」 lands exactly on our heading -- two headings, one on top of
+   * the other.
+   *
+   * Pushing the pinned heading down by however much of our section is still on
+   * screen puts it back where its own in-list heading would be, and the offset
+   * reaches zero exactly as our section scrolls out. No handler of Slack's is
+   * touched: this is one custom property that CSS turns into a transform.
+   */
+  function trackStickyHeading(picker, row) {
+    const scroller = picker.querySelector(SEL.pickerScroller);
+    if (!scroller) return;
+    const update = () => {
+      const height = row.hidden ? 0 : row.getBoundingClientRect().height;
+      const offset = Math.max(0, height - scroller.scrollTop);
+      picker.style.setProperty("--sjr-sticky-offset", `${offset}px`);
+    };
+    update();
+    picker.classList.add("sjr-hosted");
+    // Safety net: the height is fixed in CSS, but if it ever stops being, the
+    // offset follows it rather than going stale.
+    if (!picker.__sjrRowResize && typeof ResizeObserver === "function") {
+      picker.__sjrRowResize = new ResizeObserver(() => picker.__sjrStickyUpdate?.());
+      picker.__sjrRowResize.observe(row);
+    }
+    if (picker.__sjrStickyBound) {
+      picker.__sjrStickyUpdate = update;
+      return;
+    }
+    picker.__sjrStickyBound = true;
+    picker.__sjrStickyUpdate = update;
+    scroller.addEventListener("scroll", () => picker.__sjrStickyUpdate?.(), { passive: true });
+  }
+
+  /**
+   * Hide the section while the user is searching.
+   *
+   * With a query in the box Slack replaces the list with results, and a
+   * suggestion section floating above those would be nonsense. Hiding is safe
+   * mid-click: `react()` types into this very box, but by then the shortcode
+   * has already been read out of the button, and nothing reads the row again.
+   */
+  function syncRowToSearch(picker, row) {
+    const input = picker.querySelector(SEL.pickerInput);
+    if (!input) return;
+    const apply = () => {
+      row.hidden = (input.value || "").trim() !== "";
+      picker.__sjrStickyUpdate?.();
+    };
+    apply();
+    if (picker.__sjrSearchBound) return;
+    picker.__sjrSearchBound = true;
+    input.addEventListener("input", apply);
+  }
+
   self.SiteAdapter = {
     name: "slack",
     workspaceId,
@@ -382,16 +486,45 @@
       return stop;
     },
 
+    /**
+     * Put the suggestion section at the top of the scrolling list, so it reads
+     * as one more section of it and scrolls away with the content.
+     *
+     * It goes in as the scroll container's first child, ahead of the sized
+     * element react-virtualized positions its rows inside. That element keeps
+     * its own height, so the scrollable range simply grows by our height and
+     * every row keeps its offset relative to it.
+     *
+     * The worry with this is windowing: react-virtualized decides which rows to
+     * render from `scrollTop`, which our section shifts by ~64px. Measured on
+     * the live list (6,920px of content in a 309px viewport) it holds up --
+     * cells cover the viewport at the top, at 25/50/90% and at the very bottom,
+     * the last section stays reachable, and every category tab still lands on
+     * its own heading. The overscan react-virtualized already keeps is larger
+     * than the shift, which is why nothing goes blank.
+     *
+     * Nothing here touches React internals or Slack's handlers; it is one extra
+     * DOM node plus CSS. If Slack changes the list, the worst case is that the
+     * node lands somewhere harmless or not at all.
+     */
     mountRow(picker) {
-      const list = picker.querySelector(SEL.pickerList);
-      if (!list) return null;
-      // Re-opening the picker re-uses the row rather than stacking a second one.
-      const existing = list.parentElement.querySelector("[data-sjr-row]");
-      if (existing) return existing;
-      const row = document.createElement("div");
-      row.setAttribute("data-sjr-row", "");
-      row.className = "sjr-row";
-      list.parentElement.insertBefore(row, list);
+      let row = picker.querySelector("[data-sjr-row]");
+      if (!row) {
+        row = document.createElement("div");
+        row.setAttribute("data-sjr-row", "");
+        row.className = "sjr-row";
+      }
+      // The virtualised list mounts a beat after the dialog does, so the row is
+      // never rejected for arriving early: it is parked in the list container
+      // and the observer below moves it in as soon as the scroller exists.
+      if (!seatRow(picker, row)) {
+        const container = picker.querySelector(SEL.pickerList);
+        if (!container) return null;
+        if (row.parentElement !== container) container.appendChild(row);
+      }
+      keepRowSeated(picker, row);
+      syncRowToSearch(picker, row);
+      trackStickyHeading(picker, row);
       return row;
     },
 
