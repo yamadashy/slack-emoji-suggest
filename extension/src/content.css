@@ -27,65 +27,139 @@ html.sjr-harvesting .ReactModal__Content {
 }
 
 /*
- * Slack pins the current section's title in a zero-height overlay at the top of
- * the list. Our section is the first thing in that list, so without this the
- * pinned title sits right on top of our heading. The adapter keeps
- * `--sjr-sticky-offset` equal to however much of our section is still on
- * screen, which puts the pinned title back where its own in-list heading is and
- * fades to zero as our section scrolls away.
+ * Making room for the section, without lying to react-virtualized.
+ * ================================================================
+ *
+ * The section has to look like the first section of the picker's list and
+ * scroll away with it, but it cannot *be* part of that list. react-virtualized
+ * renders only the rows it believes are on screen, worked out from `scrollTop`
+ * alone, so anything that quietly pushes the rows down leaves it rendering the
+ * wrong window: 62px of viewport is then covered by rows it has already
+ * unmounted, and scrolling makes 「よく使う絵文字」 blink in and out. Slack's
+ * pinned heading reads the same `scrollTop`, so it went wrong by the same 62px.
+ *
+ * So the rows are left exactly where the library puts them, and Slack's scroll
+ * *viewport* is slid down instead, by however much of our section is still on
+ * screen -- 62px at the top of the list, nothing from 62px of scroll on. The
+ * list container already clips, so what is pushed out of sight is simply not
+ * drawn, and every row the library renders stays inside the visible area at
+ * every scroll position, in both directions.
+ *
+ * The displacement comes from a scroll-driven animation and not from a scroll
+ * handler. `scroll` events reach the main thread after the compositor has
+ * already moved the content, so anything positioned from one is a frame behind
+ * the pixels it is meant to line up with, which reads as judder. A scroll
+ * timeline is evaluated where the scrolling happens, so the two cannot
+ * disagree, and none of our JavaScript runs per scroll event at all.
+ *
+ * 62px is the section's height; the keyframes and the range have to agree
+ * with it.
  */
-[data-qa="emoji-picker"].sjr-hosted .p-emoji_picker__sticky_header > * {
-  transform: translateY(var(--sjr-sticky-offset, 0px));
+@keyframes sjr-make-room {
+  from { translate: 0 62px; }
+  to { translate: 0 0; }
+}
+
+@keyframes sjr-scroll-away {
+  from { translate: 0 0; }
+  to { translate: 0 -62px; }
 }
 
 /*
- * The section sits at the top of the picker's scrolling list, as the scroll
- * container's first child, and is meant to be indistinguishable from one of
- * Slack's own sections: no band, no background, no border, no separator. The
- * only thing that marks it out is its heading text.
+ * All of it hangs off the section's own node, not off a class on the picker.
+ * A class was tried and Slack takes it away: clicking a category tab makes
+ * React rewrite the picker's whole `className`, and defending it from a
+ * MutationObserver watching `class` across the subtree span the renderer at
+ * 100% CPU. `:has()` needs no defending -- the node is ours, the observer
+ * already keeps it seated, and `hidden` is the same switch the search box
+ * already flips.
+ */
+
+/* The scroller names its own scroll progress; the list container -- the one
+   ancestor shared by the scroller, the pinned heading and our section -- puts
+   that name in scope for all three. */
+.p-emoji_picker__list_container:has(> [data-sjr-row]) {
+  timeline-scope: --sjr-list;
+}
+
+.p-emoji_picker__list_container:has(> [data-sjr-row]) .ReactVirtualized__List {
+  scroll-timeline: --sjr-list block;
+}
+
+/* Slack's list and its pinned heading come down to make room; our section rides
+   up and out. Both are done by 62px of scroll, after which the picker is laid
+   out exactly as Slack laid it out. While the search box has a query the
+   section is `hidden`, so there is nothing to make room for and none of this
+   applies. */
+.p-emoji_picker__list_container:has(> [data-sjr-row]:not([hidden])) > .p-emoji_picker__list,
+.p-emoji_picker__list_container:has(> [data-sjr-row]:not([hidden])) > .p-emoji_picker__sticky_header > * {
+  /* The at-rest value, for when there is nothing to scroll. A category with few
+     enough emoji to fit -- the workspace tab, usually -- gives the scroller no
+     scroll range, which makes the timeline inactive and drops the animation
+     entirely; the section would then sit on top of the first row. This is the
+     same 62px the animation starts from, and an animation outranks it whenever
+     there is a timeline to drive one. */
+  translate: 0 62px;
+  animation: sjr-make-room linear both;
+  animation-timeline: --sjr-list;
+  animation-range: 0 62px;
+}
+
+.sjr-row:not([hidden]) {
+  animation: sjr-scroll-away linear both;
+  animation-timeline: --sjr-list;
+  animation-range: 0 62px;
+}
+
+/*
+ * The section itself, laid over the top of the list. It is meant to be
+ * indistinguishable from one of Slack's own sections: no band, no background,
+ * no border, no separator. The only thing that marks it out is its heading
+ * text, and nothing of Slack's is ever underneath it, because the list below
+ * has been pushed down by exactly its height.
  *
- * The height is fixed rather than driven by content. The section is the first
- * thing in a virtualised list, so a change in its height moves every row below
- * it; reserving the space up front means the answer arriving, or failing, never
- * makes the list jump under the pointer.
+ * That height is fixed rather than driven by content, so an answer arriving --
+ * or failing -- never moves anything, and the displacement above is right from
+ * the first frame rather than after the first scroll.
  */
 .sjr-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
   padding: 0 0 4px;
   box-sizing: border-box;
-  /* 26 (heading) + 32 (one cell row) + 4 (padding). Fixed from the first frame,
-     before any suggestion has arrived, so the list never shifts under the
-     pointer when the answer lands -- and so the pinned-heading offset below is
-     correct immediately rather than after the first scroll. */
-  min-height: 62px;
+  /* 26 (heading) + 32 (one cell row) + 4 (padding). */
+  height: 62px;
 }
 
 /* Measured against Slack's own 「よく使う絵文字」 heading so the two read as one
-   list: 13px/700, a 26px line box, and text 21px from the picker's edge.
-   The section lives inside the scroll container, which is itself inset 8px, so
-   the padding here is that 21 minus the 8 -- the earlier 20px was measured when
-   the row sat outside the scroller and over-indented us by exactly the inset. */
+   list: 13px/700, a 26px line box, and text 21px from the picker's edge. The
+   section is a child of the list container, which is flush with the picker, so
+   21px is the padding outright -- it was 13px while the section sat inside the
+   scroller, which is inset a further 8px. */
 .sjr-label {
   font-size: 13px;
   font-weight: 700;
   line-height: 26px;
-  padding: 0 13px;
+  padding: 0 21px;
   color: currentColor;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Slack's grid cells start 15px from the picker's edge; minus the scroll
-   container's own 8px inset that is 7px here, which puts our first suggestion
-   in the same column as the first emoji of every row below. The fixed height is
-   one cell row: five suggestions never wrap at this width. */
+/* Slack's grid cells start 15px from the picker's edge, which puts our first
+   suggestion in the same column as the first emoji of every row below. The
+   fixed height is one cell row: five suggestions never wrap at this width. */
 .sjr-body {
   display: flex;
   align-items: flex-start;
   gap: 0;
   flex-wrap: nowrap;
   height: 32px;
-  padding: 0 7px;
+  padding: 0 15px;
 }
 
 .sjr-body--status {

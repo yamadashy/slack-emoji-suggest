@@ -85,46 +85,70 @@ first in the picker's scrolling list, so the order reads: ours →
 Slack's frequently-used section. It scrolls away with the content like any other
 section, and carries no band, background or border of its own.
 
-Mechanically it is one `div` inserted as the scroll container's first child,
-ahead of the sized element react-virtualized positions its rows inside. That
-element keeps its own height, so the scrollable range simply grows by ours and
-every row keeps its offset relative to it. No React internals are touched and no
-handler of Slack's is wrapped; a Slack change can at worst leave the node
-unplaced.
+Mechanically it is one `div` laid over the top of the picker's list container,
+with CSS sliding Slack's whole scroll *viewport* down by however much of the
+section is still showing — 62px at the top of the list, nothing from 62px of
+scroll on. The container already clips, so what is pushed out of sight is not
+drawn. No React internals are touched and no handler of Slack's is wrapped; a
+Slack change can at worst leave the node unplaced.
 
-The obvious risk is windowing: react-virtualized picks which rows to render from
-`scrollTop`, which our 62px section shifts. Measured on the live list (about
-7,000px of content in a 309px viewport) it holds:
+#### Why it is not simply inserted into the list
 
-- Cells cover the viewport at the top, at 25%, 50%, 90% and at the very bottom;
-  the final section stays reachable. The only places nothing covers the topmost
-  few pixels are where a section *heading* sits there, which is equally true
-  with the section removed.
-- The overscan react-virtualized already keeps is larger than the shift, which
-  is why nothing goes blank.
-- The category tabs turned out to **filter** the list rather than scroll to an
-  offset — each tab replaces the content and resets `scrollTop` — so there is no
-  jump to land wrong. Our section stays at the top of whichever category is
-  shown, including the custom tab.
+The obvious implementation is an extra node in front of the grid, inside the
+scroll container, growing the scrollable range by its own height. That was the
+implementation up to 0.5.1, and it was wrong.
 
-Two details needed handling:
+react-virtualized renders only the rows it believes are on screen, worked out
+from `scrollTop` alone. A node in front of the grid pushes every row down by its
+height without telling the library, so at any scroll position past the top, the
+first 62px of the viewport was covered by rows it had already unmounted.
+Measured on the live picker: at `scrollTop` 60 the 「よく使う絵文字」 heading and
+its emoji were on screen; at 62 they were gone, with a 62px hole in their place.
+Rolling the wheel made the section blink in and out — that was the real bug
+behind "「よく使う絵文字」 moves up and down when I scroll". Overscan does not save
+it, because react-virtualized only overscans in the direction of travel:
+scrolling down, it trims the top immediately. Slack's pinned heading reads the
+same `scrollTop`, which is why it also named the next section 62px early.
 
-- **Slack's pinned heading.** Slack shows the current section's title in a
-  zero-height overlay pinned to the top of the list, and sets `visibility:
-  hidden` on the in-list copy while it does. With our section first, the pinned
-  「よく使う絵文字」 landed exactly on our heading. The adapter keeps a
-  `--sjr-sticky-offset` custom property equal to however much of our section is
-  still on screen, and CSS translates the pinned title by it; the offset reaches
-  zero exactly as our section scrolls out.
-- **Height is reserved in CSS**, not derived from content. The section is the
-  first thing in a virtualised list, so a height change would move every row
-  below it. Fixing it at 62px means the list never shifts when an answer lands,
-  and the pinned-heading offset is right from the first frame.
+Moving the viewport instead of the content leaves `scrollTop` meaning what it
+has always meant, so every row the library renders stays inside the visible
+area, and the pinned heading is right again. Verified against the same picker
+with the section switched off: over 380 sampled animation frames of wheel
+scrolling — slow, fast, down and back up — the two are identical, down to
+Slack's own 1px offset at the top of the list and a single frame of
+react-virtualized render lag on a hard fling.
+
+Three details are load-bearing:
+
+- **No JavaScript runs per scroll event.** The displacement is a scroll-driven
+  CSS animation: `scroll-timeline` on the scroller, `timeline-scope` on the list
+  container so the pinned heading and our section can see it. `scroll` events
+  reach the main thread after the compositor has already moved the content, so
+  anything positioned from one is a frame behind the pixels it should line up
+  with.
+- **It keys off the section's own node**, via `:has()`, not off a class on the
+  picker. A class was tried: Slack rewrites the picker's whole `className` when
+  a category tab is clicked, and defending it with a MutationObserver watching
+  `class` across the subtree span the renderer at 100% CPU.
+- **A static `translate` backs the animation up.** A category that fits without
+  scrolling — the workspace tab, usually — gives the scroller no scroll range,
+  which makes the timeline inactive and drops the animation entirely. The
+  fallback is the same 62px the animation starts from, and an animation outranks
+  it whenever there is a timeline to drive one.
+
+The category tabs **filter** the list rather than scroll to an offset — each tab
+replaces the content and resets `scrollTop` — so the section stays at the top of
+whichever category is shown, including the custom tab.
+
+**Height is reserved in CSS**, not derived from content. 62px, fixed from the
+first frame, so an answer arriving or failing never moves anything and the
+displacement is right before the first scroll rather than after it.
 
 While the search box has a query Slack replaces the list with results, so the
-section hides itself and the offset drops to zero; clearing the query brings
-both back. Hiding is safe mid-click — `react()` types into that same box, but
-the shortcode has already been read off the button by then.
+section hides itself; `hidden` is the same switch the CSS reads, so Slack's list
+and pinned heading go straight back where Slack put them. Clearing the query
+brings both back. Hiding is safe mid-click — `react()` types into that same box,
+but the shortcode has already been read off the button by then.
 
 A picker-scoped MutationObserver re-seats the node if Slack re-renders the list
 out from under it. It moves the same node rather than recreating one, so there
@@ -399,10 +423,11 @@ in the code.
 - A Chrome Web Store listing may have to use the "… for Slack" form of the name.
   Store titles that lead with another company's trademark have been taken down
   before; the in-product name can stay as it is.
-- Slack's pinned section heading is driven by `scrollTop`, which our section
-  shifts by its own height, so during roughly 60px of scrolling just past the
-  section the pinned title names the next section slightly early. Cosmetic, only
-  while actively scrolling, and not worth reaching into Slack's logic for.
+- The section's placement leans on `scroll-timeline`, `timeline-scope` and
+  `:has()`. All three are fine in current Chrome, which is the only target, but
+  they are the newest CSS in the project. If a future Chrome changed how an
+  inactive scroll timeline behaves, the fallback in the same rule is what would
+  still be holding the section off Slack's first row.
 - The suggestion row follows Slack's light and dark themes by using
   `currentColor` and translucent greys rather than fixed colours. The popup
   follows the OS `prefers-color-scheme`, since Chrome does not tell a popup the
