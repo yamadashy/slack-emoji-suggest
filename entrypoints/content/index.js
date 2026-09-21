@@ -1,17 +1,26 @@
 /**
  * The site-neutral half: debounce, cache, and the suggestion row's contents.
  *
- * It talks to two things and knows nothing else: `self.SiteAdapter` (which
- * knows the chat app's DOM) and the service worker (which knows the API key
- * and the ranking model). No selectors and no model names below this line.
+ * It talks to two things and knows nothing else: the site adapter (which knows
+ * the chat app's DOM) and the service worker (which knows the API key and the
+ * ranking model). No selectors and no model names below this line.
  *
  * Privacy: text leaves the page only because the pointer settled on a message,
  * or its picker was opened -- that message, plus the few rendered just before
  * it as context. Nothing scans the channel.
  */
-(() => {
-  const adapter = self.SiteAdapter;
-  if (!adapter) return;
+import { defineContentScript } from "wxt/utils/define-content-script";
+import { t } from "@/utils/i18n.js";
+import { SiteAdapter as adapter } from "@/utils/sites/slack.js";
+import "./style.css";
+
+export default defineContentScript({
+  matches: ["https://app.slack.com/*"],
+  runAt: "document_idle",
+  main,
+});
+
+function main() {
 
   /** Pointer has to rest this long before a message is worth a request, so
    *  sweeping the mouse down the channel fires nothing. */
@@ -376,4 +385,4 @@
     });
     return b;
   }
-})();
+}

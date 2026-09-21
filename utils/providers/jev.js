@@ -11,15 +11,14 @@
  * the point here is to suggest several. Noul judges each emoji on its own, so
  * several can score high at once. It also runs lenient -- a lot of 0.8s -- so
  * the caller is expected to apply a threshold and a top-N.
- *
- * A plain script publishing itself into `self.Providers.jev`.
  */
-(() => {
+import { t } from "../i18n.js";
+
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const MODEL = "jev-latest";
 
 /** Shown next to the API key field on the options page. */
-const LABEL = "TypeSafe Jev";
+export const LABEL = "TypeSafe Jev";
 
 /**
  * The question for an emoji that comes with a description.
@@ -83,7 +82,7 @@ const CONTEXT_INSTRUCTION =
  *   that is the caller's policy, not the model's.
  * @throws {Error} with a message written for the user, in Japanese.
  */
-async function rank({ message, context = [], candidates, apiKey, signal }) {
+export async function rank({ message, context = [], candidates, apiKey, signal }) {
   const hasContext = context.length > 0;
   const questions = {};
   candidates.forEach((c, i) => {
@@ -141,7 +140,3 @@ async function describe(r) {
       return t("errGeneric", [String(r.status), detail ? `: ${detail}` : ""]);
   }
 }
-
-self.Providers = self.Providers || {};
-self.Providers.jev = { LABEL, rank };
-})();

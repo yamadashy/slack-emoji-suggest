@@ -25,13 +25,15 @@ To update, download the new zip and drag it onto `chrome://extensions` again.
 
 ## 💻 Development
 
-Everything under `extension/src/` is plain JavaScript, loaded unbuilt. Only the popup is built:
+Built with [WXT](https://wxt.dev). Nothing built is committed.
 
 ```sh
-cd popup
 npm ci
-npm run dev     # browser preview, chrome.* is mocked
-npm run build   # writes extension/popup/ — commit the result
+npm run dev     # launches Chrome with the extension loaded, and reloads on edit
+npm run build   # writes .output/chrome-mv3/
+npm run zip     # writes .output/slack-emoji-suggest-<version>-chrome.zip
 ```
 
-To work from a clone, load the `extension/` directory with **Load unpacked** instead. After changing the extension, reload it on `chrome://extensions` and reload the Slack tab.
+`npm run dev` is the usual loop. For a plain build, load `.output/chrome-mv3/` with **Load unpacked**, and after changing the extension reload it on `chrome://extensions` and reload the Slack tab.
+
+A release is cut by bumping `version` in `package.json` and pushing to main.

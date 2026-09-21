@@ -7,22 +7,14 @@
  * two. It also owns the stored set of workspace emoji: the content script
  * harvests them from the page, the worker merges and persists them.
  *
- * A classic worker, not a module one: importScripts() is synchronous, so the
- * shared files are in place within the worker's first turn.
- *
- * Two things about the ordering below are deliberate, and both were bugs first:
- *
- * - The listener is registered before anything that can fail. An MV3 worker is
- *   started *by* the message it has to answer; if the top of the script throws,
- *   the listener never exists and the page only ever sees "the extension did
- *   not answer". Registering first turns any load failure into a sentence the
- *   user can act on.
- * - The listener must return `true` synchronously to keep the reply channel
- *   open, so the async work is kicked off and its result posted back later.
+ * One thing about the listener below is deliberate, and it was a bug first: it
+ * must return `true` synchronously to keep the reply channel open, so the async
+ * work is kicked off and its result posted back later.
  */
-
-/** Set if the shared files could not be loaded; reported instead of an answer. */
-let loadError = null;
+import { defineBackground } from "wxt/utils/define-background";
+import { t } from "@/utils/i18n.js";
+import { EMOJI_GLYPHS, buildCandidates, chunkByBudget, markNameMatches } from "@/utils/candidates.js";
+import { DEFAULT_PROVIDER, getProvider } from "@/utils/providers/index.js";
 
 /** Every request this worker answers, and the function behind it. */
 const HANDLERS = {
@@ -60,34 +52,21 @@ const HANDLERS = {
   openSettings: (_msg, sender) =>
     chrome.action
       .openPopup(sender?.tab?.windowId ? { windowId: sender.tab.windowId } : undefined)
-      .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL("popup/index.html") }))
+      .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") }))
       .then(() => ({})),
 };
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const handler = HANDLERS[msg?.type];
-  if (!handler) return false;
-  if (loadError) {
-    // importScripts may have failed on i18n.js itself, so `t` cannot be relied
-    // on here -- go straight to chrome.i18n instead.
-    sendResponse({ ok: false, error: chrome.i18n.getMessage("errLoadFailed", [loadError]) });
-    return true;
-  }
-  handler(msg, sender).then(
-    (result) => sendResponse({ ok: true, ...result }),
-    (err) => sendResponse({ ok: false, error: err?.message || t("errUnknown"), code: err?.code || null }),
-  );
-  return true; // keep the channel open for the async reply
+export default defineBackground(() => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    const handler = HANDLERS[msg?.type];
+    if (!handler) return false;
+    handler(msg, sender).then(
+      (result) => sendResponse({ ok: true, ...result }),
+      (err) => sendResponse({ ok: false, error: err?.message || t("errUnknown"), code: err?.code || null }),
+    );
+    return true; // keep the channel open for the async reply
+  });
 });
-
-try {
-  importScripts("./i18n.js", "./candidates.js", "./providers/jev.js", "./providers/index.js");
-} catch (err) {
-  loadError = err?.message || String(err);
-}
-
-const { EMOJI_GLYPHS, buildCandidates, chunkByBudget, markNameMatches } = self.Candidates || {};
-const { DEFAULT_PROVIDER, getProvider } = self.ProviderRegistry || {};
 
 const CACHE_MAX = 50;
 /** A full harvest older than this is worth redoing. */

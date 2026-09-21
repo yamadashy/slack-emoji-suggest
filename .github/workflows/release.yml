@@ -1,12 +1,11 @@
 name: Release
 
-# Publishes extension/ as a zip on a GitHub Release whenever the manifest's
-# version is one that has no release yet. Bumping "version" in
-# extension/manifest.json and pushing to main is the whole release process.
+# Publishes a built zip on a GitHub Release whenever package.json's version is
+# one that has no release yet. Bumping "version" in package.json and pushing to
+# main is the whole release process.
 on:
   push:
     branches: [main]
-    paths: ["extension/**"]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +19,7 @@ jobs:
 
       - name: Read version
         id: version
-        run: echo "tag=v$(jq -r .version extension/manifest.json)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=v$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 
       - name: Check for an existing release
         id: existing
@@ -33,13 +32,26 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # manifest.json sits at the root of the zip: dropping a zip onto
-      # chrome://extensions fails with "Could not unzip extension" when it is
-      # inside a folder. The asset name carries no version so that
-      # releases/latest/download/slack-emoji-suggest.zip always works.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.existing.outputs.found == 'false'
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install
+        if: steps.existing.outputs.found == 'false'
+        run: npm ci
+
+      # `wxt zip` puts manifest.json at the root of the archive: dropping a zip
+      # onto chrome://extensions fails with "Could not unzip extension" when it
+      # is inside a folder. It names the file after the version, so it is copied
+      # to a fixed name -- releases/latest/download/slack-emoji-suggest.zip has
+      # to keep working, and the README links to it.
       - name: Build zip
         if: steps.existing.outputs.found == 'false'
-        run: cd extension && zip -r ../slack-emoji-suggest.zip . -x '*.DS_Store'
+        run: |
+          npm run zip
+          cp ".output/slack-emoji-suggest-$(jq -r .version package.json)-chrome.zip" slack-emoji-suggest.zip
 
       - name: Create release
         if: steps.existing.outputs.found == 'false'

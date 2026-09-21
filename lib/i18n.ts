@@ -1,15 +1,15 @@
 /**
  * The popup's translation helper.
  *
- * `chrome.i18n` is available when this runs as the real popup, but `npm run
- * dev` renders it in a plain browser tab (see bridge.ts's `hasChrome` mock
- * path), where there is no `chrome.*` at all. The fallback below reads the
- * same messages.json files the extension ships, picked by the browser's own
+ * `chrome.i18n` is available when this runs as the real popup, but the popup
+ * also renders in a plain browser tab (see bridge.ts's `hasChrome` mock path),
+ * where there is no `chrome.*` at all. The fallback below reads the same
+ * messages.json files the extension ships, picked by the browser's own
  * language -- close enough for local iteration, and it costs nothing in the
  * production bundle since Vite folds it into the JS the popup already ships.
  */
-import en from "../../../extension/_locales/en/messages.json";
-import ja from "../../../extension/_locales/ja/messages.json";
+import en from "../public/_locales/en/messages.json";
+import ja from "../public/_locales/ja/messages.json";
 
 type MessagesFile = Record<string, { message: string }>;
 

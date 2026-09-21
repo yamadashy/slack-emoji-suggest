@@ -1,4 +1,6 @@
-# The popup is the only part that gets built. Its output is committed on
-# purpose, so "load unpacked" works straight from a clone with no build step.
-popup/node_modules/
-popup/tsconfig.tsbuildinfo
+node_modules/
+.output/
+.wxt/
+stats.html
+.DS_Store
+*.tsbuildinfo

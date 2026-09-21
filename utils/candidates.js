@@ -6,12 +6,9 @@
  * ranking model either -- a provider is handed `{shortcode, description}` and
  * gives back scores.
  *
- * A plain script, not a module: the service worker loads it with
- * importScripts() and the options page with a <script> tag, so there is no
- * build step and no module-worker startup quirks. It publishes `self.Candidates`.
  * The content script never sees it: it only renders whatever the background ranked.
  */
-(() => {
+import { t } from "./i18n.js";
 
 /**
  * One candidate per line: `:shortcode: description`. The description says what
@@ -19,7 +16,7 @@
  * model reads and it was tuned that way. Ported from ai-lab's
  * web/src/components/jev/EmojiTab.tsx.
  */
-const DEFAULT_CANDIDATES = [
+export const DEFAULT_CANDIDATES = [
   ":pray: thanking someone, or politely asking a favor",
   ':eyes: "I\'ve seen this" or "I\'m looking into it"',
   ":white_check_mark: done / confirmed / task complete",
@@ -83,7 +80,7 @@ const DEFAULT_CANDIDATES = [
  * shortcode text is shown instead, which is why this map stays small rather
  * than trying to cover every shortcode in existence.
  */
-const EMOJI_GLYPHS = {
+export const EMOJI_GLYPHS = {
   ":pray:": "\u{1F64F}",
   ":eyes:": "\u{1F440}",
   ":white_check_mark:": "✅",
@@ -147,7 +144,7 @@ const EMOJI_GLYPHS = {
  * budget is handled by splitting (see `chunkByBudget`), so a long list costs
  * more requests rather than failing.
  */
-const MAX_CANDIDATES = 1000;
+export const MAX_CANDIDATES = 1000;
 
 const CANDIDATE_LINE = /^(:[\w+-]+:)\s+(.+)$/;
 
@@ -156,7 +153,7 @@ const CANDIDATE_LINE = /^(:[\w+-]+:)\s+(.+)$/;
  * naming the offending line, because a parser that just throws sends people to
  * devtools.
  */
-function parseCandidates(text) {
+export function parseCandidates(text) {
   const lines = text
     .split("\n")
     .map((l) => l.trim())
@@ -193,7 +190,7 @@ function parseCandidates(text) {
  * Workspace emoji come first. Nothing downstream depends on the order, but it
  * makes the split into requests put them together.
  */
-function buildCandidates({ standardText, customEmoji = [], customDescriptionsText = "" }) {
+export function buildCandidates({ standardText, customEmoji = [], customDescriptionsText = "" }) {
   const standard = parseCandidates(standardText || DEFAULT_CANDIDATES);
   if (standard.error) return { error: t("errStandardCandidates", [standard.error]) };
 
@@ -279,7 +276,7 @@ function nameIsMentioned(name, spacedText, tightText) {
  * the latter so the caller can prefer `claude-code` over `claude` when both
  * hit. Order is left alone -- presentation is the caller's business.
  */
-function markNameMatches(suggestions, text) {
+export function markNameMatches(suggestions, text) {
   const spacedText = normalizeText(text || "").replace(/[-_]+/g, " ");
   const tightText = spacedText.replace(/\s+/g, "");
   return suggestions.map((s) => {
@@ -302,20 +299,20 @@ function markNameMatches(suggestions, text) {
  * the provider appends to each question when earlier messages go along --
  * counted always, since over-estimating is the safe direction.
  */
-function estimateTokens(candidate) {
+export function estimateTokens(candidate) {
   const body = (candidate.description ? candidate.description.length + 260 : 300) + 330;
   return Math.ceil(body / 3.4) + 12;
 }
 
 /** Tokens per request. The documented ceiling is 64k; this leaves ample room
  *  for the message itself, the response, and the estimate being wrong. */
-const TOKEN_BUDGET = 20000;
+export const TOKEN_BUDGET = 20000;
 /** Questions per request, independent of tokens: a large map is slower to
  *  serialise on both ends and harder to reason about when something fails. */
 const MAX_QUESTIONS = 200;
 
 /** Split candidates into request-sized groups. One group is the common case. */
-function chunkByBudget(candidates) {
+export function chunkByBudget(candidates) {
   const chunks = [];
   let current = [];
   let tokens = 0;
@@ -332,16 +329,3 @@ function chunkByBudget(candidates) {
   if (current.length > 0) chunks.push(current);
   return chunks;
 }
-
-  self.Candidates = {
-    DEFAULT_CANDIDATES,
-    EMOJI_GLYPHS,
-    MAX_CANDIDATES,
-    parseCandidates,
-    buildCandidates,
-    markNameMatches,
-    estimateTokens,
-    chunkByBudget,
-    TOKEN_BUDGET,
-  };
-})();

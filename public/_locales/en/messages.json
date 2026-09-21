@@ -31,10 +31,6 @@
     "message": "Unknown error.",
     "description": "Generic fallback error message."
   },
-  "errLoadFailed": {
-    "message": "The extension failed to load: $1",
-    "description": "Shown when the service worker's shared scripts failed to load."
-  },
   "errNoApiKey": {
     "message": "No API key is set.",
     "description": "Error when ranking is requested without an API key configured."
