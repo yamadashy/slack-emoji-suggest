@@ -1,0 +1,52 @@
+name: Release
+
+# Publishes extension/ as a zip on a GitHub Release whenever the manifest's
+# version is one that has no release yet. Bumping "version" in
+# extension/manifest.json and pushing to main is the whole release process.
+on:
+  push:
+    branches: [main]
+    paths: ["extension/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read version
+        id: version
+        run: echo "tag=v$(jq -r .version extension/manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The asset name carries no version so that
+      # releases/latest/download/slack-emoji-suggest.zip always works.
+      - name: Build zip
+        if: steps.existing.outputs.found == 'false'
+        run: |
+          cp -r extension slack-emoji-suggest
+          zip -r slack-emoji-suggest.zip slack-emoji-suggest -x '*.DS_Store'
+
+      - name: Create release
+        if: steps.existing.outputs.found == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" slack-emoji-suggest.zip \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes

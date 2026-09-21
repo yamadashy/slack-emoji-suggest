@@ -8,12 +8,14 @@ Hover a message, open the reaction picker, and up to nine suggestions appear abo
 
 ## 🚀 Install
 
-Not on the Chrome Web Store yet.
+Not on the Chrome Web Store yet, so it is loaded from a zip.
 
-1. Clone this repo. No build step is needed.
-2. Open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the `extension/` directory.
+1. Download [slack-emoji-suggest.zip](https://github.com/yamadashy/slack-emoji-suggest/releases/latest/download/slack-emoji-suggest.zip) and unzip it.
+2. Open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the unzipped `slack-emoji-suggest` folder.
 3. Click the toolbar icon and paste a TypeSafe API key into the popup.
 4. Open Slack in the browser (not the desktop app) and hover a message.
+
+To update, download the zip again, replace the folder, and press the reload button on `chrome://extensions`.
 
 ## 🔒 Privacy
 
@@ -32,4 +34,4 @@ npm run dev     # browser preview, chrome.* is mocked
 npm run build   # writes extension/popup/ — commit the result
 ```
 
-After changing the extension, reload it on `chrome://extensions` and reload the Slack tab.
+To work from a clone, load the `extension/` directory with **Load unpacked** instead. After changing the extension, reload it on `chrome://extensions` and reload the Slack tab.
