@@ -33,13 +33,13 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # The asset name carries no version so that
+      # manifest.json sits at the root of the zip: dropping a zip onto
+      # chrome://extensions fails with "Could not unzip extension" when it is
+      # inside a folder. The asset name carries no version so that
       # releases/latest/download/slack-emoji-suggest.zip always works.
       - name: Build zip
         if: steps.existing.outputs.found == 'false'
-        run: |
-          cp -r extension slack-emoji-suggest
-          zip -r slack-emoji-suggest.zip slack-emoji-suggest -x '*.DS_Store'
+        run: cd extension && zip -r ../slack-emoji-suggest.zip . -x '*.DS_Store'
 
       - name: Create release
         if: steps.existing.outputs.found == 'false'
