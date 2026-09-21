@@ -5,8 +5,9 @@
  * knows the chat app's DOM) and the service worker (which knows the API key
  * and the ranking model). No selectors and no model names below this line.
  *
- * Privacy: a message's text leaves the page only because the pointer settled
- * on that one message, or its picker was opened. Nothing scans the channel.
+ * Privacy: text leaves the page only because the pointer settled on a message,
+ * or its picker was opened -- that message, plus the few rendered just before
+ * it as context. Nothing scans the channel.
  */
 (() => {
   const adapter = self.SiteAdapter;
@@ -22,11 +23,11 @@
    * errors" scores :ship: 0.96, :white_check_mark: 0.93, :tada: 0.93. Short
    * idea memos score far lower across the board -- a one-line memo topped out
    * at 0.65 -- so an 0.8 floor shows nothing at all on a memo channel. The
-   * floor exists to drop junk, and with only five slots, 0.5 does that
+   * floor exists to drop junk, and with only nine slots, 0.5 does that
    * without silencing whole channels.
    */
   const MIN_SCORE = 0.5;
-  const MAX_SUGGESTIONS = 5;
+  const MAX_SUGGESTIONS = 9; // one full row of Slack's grid
   /** Mirrors the worker's cache so a re-opened picker paints with no flicker. */
   const LOCAL_CACHE_MAX = 50;
 
@@ -90,7 +91,8 @@
 
   function request(message) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "suggest", key: message.id, text: message.text, workspace }, (res) => {
+      const payload = { type: "suggest", key: message.id, text: message.text, context: message.context || [], workspace };
+      chrome.runtime.sendMessage(payload, (res) => {
         if (chrome.runtime.lastError) {
           // The user-facing sentence stays short; the real reason goes to the
           // console, because every cause here ("context invalidated" after a
@@ -287,7 +289,7 @@
   }
 
   /**
-   * Pick the five to show.
+   * Pick the nine to show.
    *
    * An emoji whose name the message actually said comes first and ignores the
    * score floor -- if someone writes 「Claude Codeの絵文字つけてほしい」 then

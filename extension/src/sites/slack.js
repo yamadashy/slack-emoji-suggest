@@ -33,8 +33,9 @@
  *   hasComposer()             whether the harvest's entry point exists yet.
  *   composerDraft()           the current draft text, for before/after checks.
  *
- * A `message` is `{id, text}`: `id` is stable and unique (channel + ts), `text`
- * is the plain body. An emoji is `{name, url}`. Nothing else crosses the
+ * A `message` is `{id, text, context}`: `id` is stable and unique (channel +
+ * ts), `text` is the plain body, `context` the bodies of the few messages
+ * before it, oldest first. An emoji is `{name, url}`. Nothing else crosses the
  * boundary.
  *
  * Slack's DOM is not a public API. Selectors are all in SEL below, and every
@@ -141,7 +142,47 @@
     const body = root.querySelector(SEL.messageText);
     const text = (body?.innerText || "").trim();
     if (!text) return null;
-    return { id: `${channel || "?"}/${ts}`, text };
+    return {
+      id: `${channel || "?"}/${ts}`,
+      text,
+      // Lazy: this runs on every mouseover, and the context is only wanted for
+      // the one message the pointer finally rests on.
+      get context() {
+        return getContext(root);
+      },
+    };
+  }
+
+  /** How many earlier messages go along as context, and how much of each. */
+  const CONTEXT_MESSAGES = 3;
+  const CONTEXT_CHARS = 300;
+
+  /**
+   * The messages just before `root` in the same list, oldest first.
+   *
+   * A reaction answers a conversation, not a sentence: 「お騒がせしました」 means
+   * something different after a bug report than after a joke. In a thread pane
+   * the list is the thread, so this is the thread's earlier replies, and the
+   * parent message is put first whenever it is still rendered.
+   *
+   * Only what is in the DOM is read -- the list is virtualised, and nothing
+   * here scrolls it or asks Slack for more. "Same list" is the nearest
+   * `role="list"` ancestor, which keeps a thread pane and the channel behind
+   * it apart.
+   */
+  function getContext(root) {
+    const list = root.closest('[role="list"]');
+    if (!list) return [];
+    const all = [...list.querySelectorAll(SEL.message)];
+    const at = all.indexOf(root);
+    if (at <= 0) return [];
+    const picked = all.slice(Math.max(0, at - CONTEXT_MESSAGES), at);
+    // A thread's parent is the first message of its list; keep it even when
+    // the replies in between pushed it out of the window.
+    if (root.closest('[data-qa*="thread"]') && !picked.includes(all[0])) picked.unshift(all[0]);
+    return picked
+      .map((el) => (el.querySelector(SEL.messageText)?.innerText || "").trim().slice(0, CONTEXT_CHARS))
+      .filter((t) => t !== "");
   }
 
   /**
@@ -453,30 +494,20 @@
     },
 
     /**
-     * Put the suggestion section at the top of the scrolling list, so it reads
-     * as one more section of it and scrolls away with the content.
+     * Put the suggestion section above the picker's list.
      *
-     * The obvious way to do that -- an extra node in front of the grid, inside
-     * the scroll container -- is the one thing that cannot work, and the
-     * previous version's scroll glitch was exactly this. react-virtualized
-     * renders only the rows it believes are in view, computed from `scrollTop`.
-     * An in-flow node above the grid pushes every row down by its own height
-     * without telling the library, so at any scroll position past the top the
-     * rows covering the first 62px of the viewport were ones the library had
-     * already unmounted. Measured: at `scrollTop` 60 the 「よく使う絵文字」 heading
-     * and its emoji were on screen; at 62 they were gone and a 62px hole sat in
-     * their place. Rolling the wheel made them blink in and out. The overscan
-     * does not save it, because react-virtualized only overscans in the
-     * direction of travel -- scrolling down, it trims the top immediately.
+     * It cannot be a node inside the scroll container: react-virtualized
+     * renders only the rows it believes are in view, computed from `scrollTop`,
+     * and an in-flow node above the grid pushes every row down by its own
+     * height without telling the library. Measured: at `scrollTop` 60 the
+     * 「よく使う絵文字」 heading and its emoji were on screen; at 62 they were gone
+     * and a 62px hole sat in their place. The overscan does not save it,
+     * because react-virtualized only overscans in the direction of travel.
      *
-     * So the section does not join the scrolled content at all. It is laid over
-     * the top of the list, and CSS slides Slack's whole scroll *viewport* down
-     * by however much of the section is still showing. The library's rows stay
-     * exactly where it thinks they are, its window always covers what is
-     * visible, and Slack's own pinned-heading maths -- also driven by
-     * `scrollTop` -- stays honest too. Everything is driven by a scroll-driven
-     * animation in content.css, so not one line of JavaScript runs per scroll
-     * event and nothing can lag the compositor by a frame.
+     * So the section is laid over the top of the list container, and CSS moves
+     * Slack's list and pinned heading down by its height. The library's rows
+     * stay exactly where it thinks they are. content.css has the details,
+     * including why the section stays pinned rather than scrolling away.
      *
      * Nothing here touches React internals or Slack's handlers; it is one extra
      * DOM node plus CSS. If Slack changes the list, the worst case is that the

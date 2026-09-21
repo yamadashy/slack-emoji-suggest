@@ -27,7 +27,7 @@ let loadError = null;
 /** Every request this worker answers, and the function behind it. */
 const HANDLERS = {
   suggest: (msg) =>
-    suggest(msg.key, msg.text, msg.workspace).then((suggestions) => ({
+    suggest(msg.key, msg.text, msg.context, msg.workspace).then((suggestions) => ({
       suggestions,
       stats: suggestions.stats || null,
     })),
@@ -88,7 +88,7 @@ const inflight = new Map();
 
 /* ---------------------------------------------------------------- suggest */
 
-async function suggest(key, text, workspace) {
+async function suggest(key, text, context, workspace) {
   const hit = cache.get(key);
   if (hit) {
     cache.delete(key); // re-insert to mark as most recently used
@@ -98,7 +98,7 @@ async function suggest(key, text, workspace) {
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const p = rankMessage(text, workspace);
+  const p = rankMessage(text, context, workspace);
   inflight.set(key, p);
   try {
     const result = await p;
@@ -110,7 +110,7 @@ async function suggest(key, text, workspace) {
   }
 }
 
-async function rankMessage(text, workspace) {
+async function rankMessage(text, context, workspace) {
   const settings = await chrome.storage.local.get([
     "provider",
     "apiKeys",
@@ -141,7 +141,7 @@ async function rankMessage(text, workspace) {
   const chunks = chunkByBudget(built.candidates);
   const started = Date.now();
   const results = await Promise.all(
-    chunks.map((candidates) => provider.rank({ message: text, candidates, apiKey })),
+    chunks.map((candidates) => provider.rank({ message: text, context, candidates, apiKey })),
   );
 
   const scored = results

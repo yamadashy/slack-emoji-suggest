@@ -2,8 +2,8 @@
 
 A Chrome extension that suggests emoji reactions for a Slack message, including
 your workspace's own custom emoji. Hover a message and the extension asks a
-model to score every candidate emoji; open the reaction picker and the top five
-appear as their own section at the top of the emoji list, above
+model to score every candidate emoji; open the reaction picker and the top nine
+appear as their own section pinned above the emoji list, over
 「よく使う絵文字」, one click away. The interesting part is
 the custom emoji: a workspace's `:shipit:`, `:repomix:` or `:claude-code:` are
 usually the ones people actually reach for, and they are learned from Slack's
@@ -51,14 +51,15 @@ knows the ranking model, and the layer in between knows neither.
 
 ### Suggesting
 
-1. When the pointer rests on a message for **250 ms**, the text is sent to the
-   service worker and ranked ahead of time. Sweeping the mouse down a channel
+1. When the pointer rests on a message for **250 ms**, its text — plus the few
+   messages rendered just before it, as context — is sent to the service worker
+   and ranked ahead of time. Sweeping the mouse down a channel
    fires nothing.
 2. The click on the toolbar's "リアクションを追加..." button is caught in the
    **capture phase**, which is the only chance to learn which message the picker
    is about to belong to — Slack gives the picker no link back to its message.
 3. When the picker appears, a section titled 「Slack Emoji Suggest によるおすすめ」
-   is inserted at the top of the scrolling emoji list, above 「よく使う絵文字」. If
+   is pinned above the emoji list, over 「よく使う絵文字」. If
    the prefetch has landed it paints immediately, otherwise it shows
    placeholders. See [Where the section goes](#where-the-section-goes).
 4. Clicking a suggestion types the shortcode into **the picker's own search
@@ -79,18 +80,18 @@ message rows as you scroll and per-row handlers leak.
 
 ### Where the section goes
 
-The suggestions are their own section — own heading, own row of emoji — placed
-first in the picker's scrolling list, so the order reads: ours →
-「よく使う絵文字」 → 「スマイリー & 人」 → … Nothing is merged into or appended to
-Slack's frequently-used section. It scrolls away with the content like any other
-section, and carries no band, background or border of its own.
+The suggestions are their own section — own heading, own row of emoji — pinned
+above the picker's list, so the order reads: ours → 「よく使う絵文字」 →
+「スマイリー & 人」 → … Nothing is merged into or appended to Slack's
+frequently-used section. It does not scroll with the list, and a faint tint and
+hairline mark it as a band of its own rather than a section that forgot to move.
 
 Mechanically it is one `div` laid over the top of the picker's list container,
-with CSS sliding Slack's whole scroll *viewport* down by however much of the
-section is still showing — 62px at the top of the list, nothing from 62px of
-scroll on. The container already clips, so what is pushed out of sight is not
-drawn. No React internals are touched and no handler of Slack's is wrapped; a
-Slack change can at worst leave the node unplaced.
+with CSS moving Slack's list and pinned heading down by its height, 62px. The
+container already clips, so the list's last 62px would fall out of sight; a
+62px spacer after the scroller's content gives the scroll range back. No React
+internals are touched and no handler of Slack's is wrapped; a Slack change can
+at worst leave the node unplaced.
 
 #### Why it is not simply inserted into the list
 
@@ -110,39 +111,38 @@ it, because react-virtualized only overscans in the direction of travel:
 scrolling down, it trims the top immediately. Slack's pinned heading reads the
 same `scrollTop`, which is why it also named the next section 62px early.
 
-Moving the viewport instead of the content leaves `scrollTop` meaning what it
-has always meant, so every row the library renders stays inside the visible
-area, and the pinned heading is right again. Verified against the same picker
-with the section switched off: over 380 sampled animation frames of wheel
-scrolling — slow, fast, down and back up — the two are identical, down to
-Slack's own 1px offset at the top of the list and a single frame of
-react-virtualized render lag on a hard fling.
+Moving the list as a whole instead of the content inside it leaves `scrollTop`
+meaning what it has always meant, so every row the library renders stays inside
+the visible area, and the pinned heading is right again.
 
-Three details are load-bearing:
+#### Why it does not scroll away
 
-- **No JavaScript runs per scroll event.** The displacement is a scroll-driven
-  CSS animation: `scroll-timeline` on the scroller, `timeline-scope` on the list
-  container so the pinned heading and our section can see it. `scroll` events
-  reach the main thread after the compositor has already moved the content, so
-  anything positioned from one is a frame behind the pixels it should line up
-  with.
+An earlier version slid the scroll viewport up as the section left, with a
+scroll-driven animation over the first 62px. That keeps the library honest but
+the viewport and the content inside it then both move by `scrollTop`: the list
+travels at twice the wheel's speed, and the first section is eaten by the
+pinned heading while ours is still half on screen. Content at 1x needs a
+viewport that stays put, and a viewport that stays put needs a section that
+does. Stepping out of the way on the first scroll was tried as well; the list
+jumping 62px under the pointer felt wrong. Pinned and tinted is what is left.
+
+Two details are load-bearing:
+
 - **It keys off the section's own node**, via `:has()`, not off a class on the
   picker. A class was tried: Slack rewrites the picker's whole `className` when
   a category tab is clicked, and defending it with a MutationObserver watching
   `class` across the subtree span the renderer at 100% CPU.
-- **A static `translate` backs the animation up.** A category that fits without
-  scrolling — the workspace tab, usually — gives the scroller no scroll range,
-  which makes the timeline inactive and drops the animation entirely. The
-  fallback is the same 62px the animation starts from, and an animation outranks
-  it whenever there is a timeline to drive one.
+- **The list is matched as a descendant of the container, not a child.** Slack
+  sometimes wraps it in a `.p-autoclog__hook` div with no box of its own; a
+  child selector then moved the pinned heading alone, onto the next section's
+  heading.
 
 The category tabs **filter** the list rather than scroll to an offset — each tab
 replaces the content and resets `scrollTop` — so the section stays at the top of
 whichever category is shown, including the custom tab.
 
 **Height is reserved in CSS**, not derived from content. 62px, fixed from the
-first frame, so an answer arriving or failing never moves anything and the
-displacement is right before the first scroll rather than after it.
+first frame, so an answer arriving or failing never moves anything.
 
 While the search box has a query Slack replaces the list with results, so the
 section hides itself; `hidden` is the same switch the CSS reads, so Slack's list
@@ -164,7 +164,15 @@ our own images as workspace emoji. The buttons are still reachable by Tab.
 
 Each candidate is scored independently (a per-emoji yes/no probability rather
 than one distribution over all of them, so several can score high at once). The
-row shows the top five, dropping anything below **0.5**.
+row shows the top nine — one full row of Slack's grid — dropping anything below
+**0.5**.
+
+The few messages rendered just before the target (three, or a thread's parent
+plus its latest replies) go along as `state.context`, with an instruction to
+use them for topic and mood but judge the reaction to the message itself.
+Measured on 「今日中に終わらせます」: after a release announcement `:tada:` goes
+0.26 → 0.44 and `:muscle:` 0.65 → 0.83; after an outage apology `:tada:` drops
+to 0.07, `:sob:` rises 0.09 → 0.42 and `:+1:` falls 0.72 → 0.36.
 
 0.5 rather than the 0.8 that ordinary work updates suggest: a message like
 "本番環境へのデプロイが完了しました。エラーは出ていません。" scores `:ship:` 0.96 and
@@ -274,8 +282,9 @@ A 360px panel behind the toolbar icon. There is no options page.
 
 ## Privacy
 
-- **Message text leaves the browser only for the message you are pointing at.**
-  It is sent when the pointer rests on a message for 250 ms, and when that
+- **Message text leaves the browser only for the message you are pointing at,
+  plus up to three messages rendered just before it** (in a thread, also the
+  parent), which give the model the conversation. It is sent when the pointer rests on a message for 250 ms, and when that
   message's picker opens. Nothing scans a channel, and nothing is sent in the
   background.
 - Text goes to the ranking provider's endpoint (`api.typesafe.ai`) and nowhere
@@ -423,11 +432,6 @@ in the code.
 - A Chrome Web Store listing may have to use the "… for Slack" form of the name.
   Store titles that lead with another company's trademark have been taken down
   before; the in-product name can stay as it is.
-- The section's placement leans on `scroll-timeline`, `timeline-scope` and
-  `:has()`. All three are fine in current Chrome, which is the only target, but
-  they are the newest CSS in the project. If a future Chrome changed how an
-  inactive scroll timeline behaves, the fallback in the same rule is what would
-  still be holding the section off Slack's first row.
 - The suggestion row follows Slack's light and dark themes by using
   `currentColor` and translucent greys rather than fixed colours. The popup
   follows the OS `prefers-color-scheme`, since Chrome does not tell a popup the

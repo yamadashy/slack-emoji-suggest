@@ -56,10 +56,24 @@ function nameOnlyInstruction(c) {
 }
 
 /**
+ * Appended to either question when there is conversation to read.
+ *
+ * Without it the model judges a sentence in a vacuum, and picks what suits the
+ * words rather than the moment: an apology gets :bow: whether it closes a
+ * solved bug or an outage. The last clause matters because Jev is literal --
+ * left out, it rates the emoji against the context messages too.
+ */
+const CONTEXT_INSTRUCTION =
+  " `state.context` lists the messages posted just before it in the same conversation, " +
+  "oldest first. Use them to understand what is being discussed and the mood, but judge " +
+  "the reaction to `state.message` itself, not to the earlier messages.";
+
+/**
  * Score every candidate for one message.
  *
  * @param {object} args
  * @param {string} args.message      the message text being reacted to
+ * @param {string[]} [args.context]  earlier messages, oldest first; may be empty
  * @param {{shortcode: string, description: ?string}[]} args.candidates
  *   `description: null` means "judge it by its name alone".
  * @param {string} args.apiKey
@@ -69,12 +83,14 @@ function nameOnlyInstruction(c) {
  *   that is the caller's policy, not the model's.
  * @throws {Error} with a message written for the user, in Japanese.
  */
-async function rank({ message, candidates, apiKey, signal }) {
+async function rank({ message, context = [], candidates, apiKey, signal }) {
+  const hasContext = context.length > 0;
   const questions = {};
   candidates.forEach((c, i) => {
+    const base = c.description ? describedInstruction(c) : nameOnlyInstruction(c);
     questions[`noul_${i}`] = {
       type: "noul",
-      instructions: c.description ? describedInstruction(c) : nameOnlyInstruction(c),
+      instructions: hasContext ? base + CONTEXT_INSTRUCTION : base,
     };
   });
 
@@ -83,7 +99,7 @@ async function rank({ message, candidates, apiKey, signal }) {
     r = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ state: { message }, model: MODEL, questions }),
+      body: JSON.stringify({ state: hasContext ? { message, context } : { message }, model: MODEL, questions }),
       signal,
     });
   } catch (err) {

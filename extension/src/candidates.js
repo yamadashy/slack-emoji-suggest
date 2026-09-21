@@ -298,10 +298,12 @@ function markNameMatches(suggestions, text) {
  * feeds is where to split, and splitting one request too many costs half a
  * second while overshooting the context window costs the whole answer.
  * Calibrated against a measured 38 name-only questions ~= 2.8k tokens (~74
- * each); the formula gives ~80 for those.
+ * each); the formula gives ~80 for those. The +330 is the context sentence
+ * the provider appends to each question when earlier messages go along --
+ * counted always, since over-estimating is the safe direction.
  */
 function estimateTokens(candidate) {
-  const body = candidate.description ? candidate.description.length + 260 : 300;
+  const body = (candidate.description ? candidate.description.length + 260 : 300) + 330;
   return Math.ceil(body / 3.4) + 12;
 }
 
