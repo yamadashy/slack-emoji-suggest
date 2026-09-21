@@ -74,6 +74,14 @@ export const bridge = {
     await ask({ type: "setApiKey", key });
   },
 
+  async clearApiKey(): Promise<void> {
+    if (!hasChrome) {
+      mock = { ...mock, hasKey: false };
+      return;
+    }
+    await ask({ type: "clearApiKey" });
+  },
+
   async harvestNow(): Promise<void> {
     if (!hasChrome) {
       await new Promise((r) => setTimeout(r, 1200));

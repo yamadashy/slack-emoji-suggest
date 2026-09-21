@@ -203,6 +203,13 @@ function ApiKey({ hasKey, onSaved }: { hasKey: boolean; onSaved: () => void }) {
     onSaved();
   }
 
+  async function remove() {
+    await bridge.clearApiKey();
+    setSaved(false);
+    setOpen(true);
+    onSaved();
+  }
+
   return (
     <Card className="mt-2.5 gap-0 rounded-2xl px-4 py-2.5 shadow-none">
       {hasKey && !open ? (
@@ -211,13 +218,22 @@ function ApiKey({ hasKey, onSaved }: { hasKey: boolean; onSaved: () => void }) {
             <Check className="size-3.5 opacity-70" />
             {saved ? "保存しました" : "API キーは設定済みです"}
           </span>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="text-muted-foreground text-[11.5px] underline underline-offset-2"
-          >
-            変更
-          </button>
+          <span className="inline-flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-muted-foreground text-[11.5px] underline underline-offset-2"
+            >
+              変更
+            </button>
+            <button
+              type="button"
+              onClick={remove}
+              className="text-muted-foreground text-[11.5px] underline underline-offset-2"
+            >
+              削除
+            </button>
+          </span>
         </div>
       ) : (
         <div className="space-y-2">

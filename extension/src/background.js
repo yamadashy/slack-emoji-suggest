@@ -49,19 +49,31 @@ const HANDLERS = {
   setEnabled: (msg) => setEnabled(msg.workspace, msg.enabled),
   /** Write-only: there is deliberately no handler that returns the key. */
   setApiKey: (msg) => setApiKey(msg.key),
+  clearApiKey: () => clearApiKey(),
   harvestNow: () => syncCustomEmoji(),
+
+  /**
+   * Open the settings, which are the toolbar popup. `openPopup` refuses when
+   * the window is not focused or the Chrome is too old to allow it without a
+   * gesture of its own, so the same page in a tab is the fallback.
+   */
+  openSettings: (_msg, sender) =>
+    chrome.action
+      .openPopup(sender?.tab?.windowId ? { windowId: sender.tab.windowId } : undefined)
+      .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL("popup/index.html") }))
+      .then(() => ({})),
 };
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = HANDLERS[msg?.type];
   if (!handler) return false;
   if (loadError) {
     sendResponse({ ok: false, error: `拡張機能の読み込みに失敗しました: ${loadError}` });
     return true;
   }
-  handler(msg).then(
+  handler(msg, sender).then(
     (result) => sendResponse({ ok: true, ...result }),
-    (err) => sendResponse({ ok: false, error: err?.message || "不明なエラーです。" }),
+    (err) => sendResponse({ ok: false, error: err?.message || "不明なエラーです。", code: err?.code || null }),
   );
   return true; // keep the channel open for the async reply
 });
@@ -119,7 +131,11 @@ async function rankMessage(text, context, workspace) {
   ]);
   const providerId = settings.provider || DEFAULT_PROVIDER;
   const apiKey = settings.apiKeys?.[providerId];
-  if (!apiKey) throw new Error("API キーが未設定です。拡張機能の設定で登録してください。");
+  if (!apiKey) {
+    // `code` lets the row turn this one into a link to the settings; every
+    // other error is just a sentence.
+    throw Object.assign(new Error("API キーが未設定です。"), { code: "no_api_key" });
+  }
 
   // Strictly this workspace's emoji. Another workspace's are irrelevant here
   // and suggesting them would leak one workspace's vocabulary into another.
@@ -308,6 +324,17 @@ async function setEnabled(workspace, enabled) {
   const map = (await chrome.storage.local.get(ENABLED))[ENABLED] || {};
   map[workspace] = !!enabled;
   await chrome.storage.local.set({ [ENABLED]: map });
+  return {};
+}
+
+/** Forget the key, and the rankings it paid for -- "deleted" should mean the
+ *  extension stops suggesting, not that it coasts on its cache. */
+async function clearApiKey() {
+  const { provider, apiKeys } = await chrome.storage.local.get(["provider", "apiKeys"]);
+  const rest = { ...(apiKeys || {}) };
+  delete rest[provider || DEFAULT_PROVIDER];
+  await chrome.storage.local.set({ apiKeys: rest });
+  cache.clear();
   return {};
 }
 

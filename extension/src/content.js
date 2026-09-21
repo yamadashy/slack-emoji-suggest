@@ -177,6 +177,7 @@
       const res = await request(message);
       if (seq !== renderSeq || !row.isConnected) return;
       if (res.ok) paint(row, res.suggestions);
+      else if (res.code === "no_api_key") paintSettingsLink(row, `${res.error}クリックして設定`);
       else paintMessage(row, res.error);
     },
   });
@@ -277,6 +278,22 @@
       ph.className = "sjr-placeholder";
       body.appendChild(ph);
     }
+  }
+
+  /** A status line that opens the extension's settings when clicked. */
+  function paintSettingsLink(row, text) {
+    const body = shell(row);
+    body.className = "sjr-body sjr-body--status";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sjr-status sjr-status--link";
+    b.textContent = text;
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void send({ type: "openSettings" });
+    });
+    body.appendChild(b);
   }
 
   function paintMessage(row, text) {

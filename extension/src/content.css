@@ -198,9 +198,29 @@ html.sjr-harvesting .ReactModal__Content {
 }
 
 .sjr-status {
+  /* Text lines up with the heading (21px), not with the emoji cells (15px). */
+  margin-left: 6px;
   font-size: 12px;
   opacity: 0.7;
   color: currentColor;
+}
+
+.sjr-status--link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.sjr-status--link:hover,
+.sjr-status--link:focus-visible {
+  opacity: 1;
+  outline: none;
 }
 
 /* Loading: the row keeps its final height so the grid below does not jump when
