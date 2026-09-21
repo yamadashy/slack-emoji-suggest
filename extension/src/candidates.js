@@ -161,9 +161,9 @@ function parseCandidates(text) {
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l !== "");
-  if (lines.length === 0) return { error: "候補が空です。" };
+  if (lines.length === 0) return { error: t("errCandidatesEmpty") };
   if (lines.length > MAX_CANDIDATES) {
-    return { error: `候補が ${lines.length} 件あります。1 回あたり最大 ${MAX_CANDIDATES} 件までです。` };
+    return { error: t("errTooManyCandidates", [String(lines.length), String(MAX_CANDIDATES)]) };
   }
 
   const candidates = [];
@@ -171,10 +171,10 @@ function parseCandidates(text) {
   for (let i = 0; i < lines.length; i++) {
     const m = CANDIDATE_LINE.exec(lines[i]);
     if (!m) {
-      return { error: `${i + 1} 行目が読めません。\`:shortcode: 説明\` の形で書いてください: ${lines[i]}` };
+      return { error: t("errLineUnreadable", [String(i + 1), lines[i]]) };
     }
     const [, shortcode, description] = m;
-    if (seen.has(shortcode)) return { error: `${i + 1} 行目: ${shortcode} が重複しています。` };
+    if (seen.has(shortcode)) return { error: t("errDuplicateShortcode", [String(i + 1), shortcode]) };
     seen.add(shortcode);
     candidates.push({ shortcode, description: description.trim() });
   }
@@ -195,12 +195,12 @@ function parseCandidates(text) {
  */
 function buildCandidates({ standardText, customEmoji = [], customDescriptionsText = "" }) {
   const standard = parseCandidates(standardText || DEFAULT_CANDIDATES);
-  if (standard.error) return { error: `絵文字の候補: ${standard.error}` };
+  if (standard.error) return { error: t("errStandardCandidates", [standard.error]) };
 
   const overrides = new Map();
   if (customDescriptionsText.trim() !== "") {
     const parsed = parseCandidates(customDescriptionsText);
-    if (parsed.error) return { error: `カスタム絵文字の説明: ${parsed.error}` };
+    if (parsed.error) return { error: t("errCustomDescriptions", [parsed.error]) };
     for (const c of parsed.candidates) overrides.set(c.shortcode, c.description);
   }
 

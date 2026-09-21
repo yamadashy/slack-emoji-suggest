@@ -1,0 +1,262 @@
+{
+  "extensionDescription": {
+    "message": "Slack のメッセージに、ワークスペースのカスタム絵文字を含めた絵文字リアクションを提案します。",
+    "description": "Extension description shown in the Chrome Web Store and extensions page."
+  },
+  "rowLabel": {
+    "message": "Slack Emoji Suggest によるおすすめ",
+    "description": "Heading of the suggestion row in Slack's emoji picker."
+  },
+  "rowDefaultLabel": {
+    "message": "おすすめ",
+    "description": "Fallback heading of the suggestion row, if a site adapter defines none."
+  },
+  "rowNoMatch": {
+    "message": "ぴったりの候補はありませんでした。",
+    "description": "Shown in the suggestion row when nothing scored high enough."
+  },
+  "rowClickToOpenSettings": {
+    "message": "$1クリックして設定",
+    "description": "Suggestion row status line: an error, followed by a link to open the extension's settings."
+  },
+  "rowMatchedSuffix": {
+    "message": "（本文に名前が出ています）",
+    "description": "Appended to a suggestion's tooltip when its name was mentioned in the message."
+  },
+  "rowNameMatchLabel": {
+    "message": "名前一致",
+    "description": "Appended to a suggestion button's aria-label when its name was mentioned in the message."
+  },
+  "errUnknown": {
+    "message": "不明なエラーです。",
+    "description": "Generic fallback error message."
+  },
+  "errLoadFailed": {
+    "message": "拡張機能の読み込みに失敗しました: $1",
+    "description": "Shown when the service worker's shared scripts failed to load."
+  },
+  "errNoApiKey": {
+    "message": "API キーが未設定です。",
+    "description": "Error when ranking is requested without an API key configured."
+  },
+  "errWorkspaceUnknown": {
+    "message": "ワークスペースが分かりませんでした。",
+    "description": "Error when a workspace id is required but missing."
+  },
+  "errNoSlackTab": {
+    "message": "Slack のタブが見つかりません。Slack を開いてから実行してください。",
+    "description": "Error when a full custom-emoji harvest is requested with no open Slack tab."
+  },
+  "errHarvestTimeout": {
+    "message": "取り込みが時間内に終わりませんでした。もう一度試してください。",
+    "description": "Error when a custom-emoji harvest times out."
+  },
+  "errReloadSlackTab": {
+    "message": "Slack のタブを再読み込みしてください。",
+    "description": "Error when the Slack tab did not answer as expected."
+  },
+  "errHarvestFailed": {
+    "message": "カスタム絵文字を取り込めませんでした。",
+    "description": "Error when a custom-emoji harvest fails for an unspecified reason."
+  },
+  "errKeyEmpty": {
+    "message": "キーが空です。",
+    "description": "Error when saving an empty API key."
+  },
+  "errNoResponse": {
+    "message": "拡張機能が応答しませんでした。再読み込みしてください。",
+    "description": "Error when the content script gets no response from the service worker."
+  },
+  "errNoCustomEmojiSupport": {
+    "message": "このサイトではカスタム絵文字を取り込めません。",
+    "description": "Error when the current site's adapter has no harvesting support."
+  },
+  "errHarvestGenericFailed": {
+    "message": "取り込みに失敗しました。",
+    "description": "Fallback error when a custom-emoji harvest throws with no message."
+  },
+  "errHarvestNoButton": {
+    "message": "絵文字ピッカーを開くボタンが見つかりませんでした。",
+    "description": "Error during a custom-emoji harvest when the composer's emoji button is missing."
+  },
+  "errHarvestPickerNotOpen": {
+    "message": "絵文字ピッカーが開きませんでした。",
+    "description": "Error during a custom-emoji harvest when the picker never appears."
+  },
+  "errHarvestNoCustomTab": {
+    "message": "カスタム絵文字のタブが見つかりませんでした。",
+    "description": "Error during a custom-emoji harvest when the picker has no custom-emoji tab."
+  },
+  "errInvalidApiKey": {
+    "message": "API キーが正しくありません。拡張機能の設定で確認してください。",
+    "description": "Error when the ranking provider rejects the API key."
+  },
+  "errBadRequest": {
+    "message": "質問の形が API に弾かれました (422): $1",
+    "description": "Error when the ranking provider returns a 422 response."
+  },
+  "errRateLimited": {
+    "message": "レート制限に当たりました。少し待ってからもう一度。",
+    "description": "Error when the ranking provider returns a 429 response."
+  },
+  "errServerBusy": {
+    "message": "TypeSafe 側が混雑しています。少し待ってからもう一度。",
+    "description": "Error when the ranking provider returns a 529 response."
+  },
+  "errConnectionFailed": {
+    "message": "TypeSafe に接続できませんでした。",
+    "description": "Error when the request to the ranking provider fails outright."
+  },
+  "errGeneric": {
+    "message": "エラーが返りました ($1)$2",
+    "description": "Fallback error for an unrecognized status code from the ranking provider."
+  },
+  "errCandidatesEmpty": {
+    "message": "候補が空です。",
+    "description": "Error when parsing an empty emoji candidate list."
+  },
+  "errTooManyCandidates": {
+    "message": "候補が $1 件あります。1 回あたり最大 $2 件までです。",
+    "description": "Error when the emoji candidate list is too long."
+  },
+  "errLineUnreadable": {
+    "message": "$1 行目が読めません。`:shortcode: 説明` の形で書いてください: $2",
+    "description": "Error when a candidate list line does not match the expected format."
+  },
+  "errDuplicateShortcode": {
+    "message": "$1 行目: $2 が重複しています。",
+    "description": "Error when a candidate list has the same shortcode twice."
+  },
+  "errStandardCandidates": {
+    "message": "絵文字の候補: $1",
+    "description": "Error prefix for a problem in the standard candidate list."
+  },
+  "errCustomDescriptions": {
+    "message": "カスタム絵文字の説明: $1",
+    "description": "Error prefix for a problem in the custom emoji description list."
+  },
+  "busyPickerOpen": {
+    "message": "ピッカーが開いています",
+    "description": "Reason a background harvest cannot run: the emoji picker is open."
+  },
+  "busyDialogOpen": {
+    "message": "別のダイアログが開いています",
+    "description": "Reason a background harvest cannot run: some other dialog is open."
+  },
+  "busyTyping": {
+    "message": "入力中です",
+    "description": "Reason a background harvest cannot run: the user is mid-sentence in the composer."
+  },
+  "harvestAbortedByUser": {
+    "message": "操作が入ったので中断しました",
+    "description": "Recorded reason when a background harvest is aborted by user activity."
+  },
+  "harvestReadFailed": {
+    "message": "絵文字を読み取れませんでした",
+    "description": "Recorded reason when a background harvest finishes with nothing collected."
+  },
+  "popupLoadFailed": {
+    "message": "うまく読み込めませんでした。拡張機能を読み込み直してみてください。",
+    "description": "Popup note shown when the initial status request fails."
+  },
+  "popupNoWorkspace": {
+    "message": "Slack のタブを開くと、そのワークスペースの設定がここに出ます。",
+    "description": "Popup note shown when the active tab is not a supported workspace."
+  },
+  "popupPrivacyNote": {
+    "message": "メッセージの本文は、そのメッセージにカーソルを合わせたときと、絵文字を選ぶときだけ送っています。",
+    "description": "Popup footer note explaining what data leaves the page."
+  },
+  "popupWorkspaceEnabled": {
+    "message": "このワークスペースで使っています",
+    "description": "Popup status line when suggestions are enabled for the workspace."
+  },
+  "popupWorkspaceDisabled": {
+    "message": "お休み中です",
+    "description": "Popup status line when suggestions are disabled for the workspace."
+  },
+  "popupToggleAriaLabel": {
+    "message": "このワークスペースで使う",
+    "description": "Accessible label for the enable/disable switch."
+  },
+  "popupEmojiCount": {
+    "message": "カスタム絵文字 $1 個を覚えています",
+    "description": "Popup line showing how many custom emoji have been learned."
+  },
+  "popupUpdatedAt": {
+    "message": "$1に更新しました",
+    "description": "Popup line showing when the custom emoji were last synced."
+  },
+  "popupHarvestAgain": {
+    "message": "もう一度集める",
+    "description": "Button that re-runs the custom-emoji harvest."
+  },
+  "popupNoEmojiYet": {
+    "message": "まだ絵文字を覚えていません。Slack で絵文字を一度開くと、そのあと静かに集めます。",
+    "description": "Popup note shown before any custom emoji have been harvested."
+  },
+  "popupHarvestNow": {
+    "message": "いま集める",
+    "description": "Button that runs the first custom-emoji harvest."
+  },
+  "popupHarvestErrorHint": {
+    "message": "Slack のタブを開いてから、もう一度お試しください。",
+    "description": "Popup hint shown after a harvest request fails."
+  },
+  "popupHarvestFailed": {
+    "message": "うまく集められませんでした。",
+    "description": "Popup message shown when the last recorded harvest failed."
+  },
+  "popupDetailsToggle": {
+    "message": "くわしく",
+    "description": "Button that expands the error detail text."
+  },
+  "popupKeySaved": {
+    "message": "保存しました",
+    "description": "Popup status shown right after the API key is saved."
+  },
+  "popupKeySet": {
+    "message": "API キーは設定済みです",
+    "description": "Popup status shown when an API key is already configured."
+  },
+  "popupChange": {
+    "message": "変更",
+    "description": "Link that reopens the API key field to change it."
+  },
+  "popupDelete": {
+    "message": "削除",
+    "description": "Link that clears the saved API key."
+  },
+  "popupKeyEnterNew": {
+    "message": "新しい API キーを入れてください。",
+    "description": "Popup prompt shown when changing an already-set API key."
+  },
+  "popupKeyEnterFirst": {
+    "message": "はじめに API キーを入れてください。",
+    "description": "Popup prompt shown when no API key is set yet."
+  },
+  "popupKeyPlaceholder": {
+    "message": "TypeSafe Jev の API キー",
+    "description": "Placeholder text for the API key input field."
+  },
+  "popupSave": {
+    "message": "保存",
+    "description": "Button that saves the entered API key."
+  },
+  "popupTimeJustNow": {
+    "message": "たった今",
+    "description": "Relative time for a moment that just happened."
+  },
+  "popupTimeMinutesAgo": {
+    "message": "$1 分前",
+    "description": "Relative time in minutes."
+  },
+  "popupTimeHoursAgo": {
+    "message": "$1 時間前",
+    "description": "Relative time in hours."
+  },
+  "popupTimeDaysAgo": {
+    "message": "$1 日前",
+    "description": "Relative time in days."
+  }
+}

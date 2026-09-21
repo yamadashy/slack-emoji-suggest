@@ -68,18 +68,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = HANDLERS[msg?.type];
   if (!handler) return false;
   if (loadError) {
-    sendResponse({ ok: false, error: `拡張機能の読み込みに失敗しました: ${loadError}` });
+    // importScripts may have failed on i18n.js itself, so `t` cannot be relied
+    // on here -- go straight to chrome.i18n instead.
+    sendResponse({ ok: false, error: chrome.i18n.getMessage("errLoadFailed", [loadError]) });
     return true;
   }
   handler(msg, sender).then(
     (result) => sendResponse({ ok: true, ...result }),
-    (err) => sendResponse({ ok: false, error: err?.message || "不明なエラーです。", code: err?.code || null }),
+    (err) => sendResponse({ ok: false, error: err?.message || t("errUnknown"), code: err?.code || null }),
   );
   return true; // keep the channel open for the async reply
 });
 
 try {
-  importScripts("./candidates.js", "./providers/jev.js", "./providers/index.js");
+  importScripts("./i18n.js", "./candidates.js", "./providers/jev.js", "./providers/index.js");
 } catch (err) {
   loadError = err?.message || String(err);
 }
@@ -134,7 +136,7 @@ async function rankMessage(text, context, workspace) {
   if (!apiKey) {
     // `code` lets the row turn this one into a link to the settings; every
     // other error is just a sentence.
-    throw Object.assign(new Error("API キーが未設定です。"), { code: "no_api_key" });
+    throw Object.assign(new Error(t("errNoApiKey")), { code: "no_api_key" });
   }
 
   // Strictly this workspace's emoji. Another workspace's are irrelevant here
@@ -238,7 +240,7 @@ async function recordHarvest(workspace, error) {
  * freshly synced. Site-neutral: the worker never learns how they were found.
  */
 async function mergeCustomEmoji(workspace, emoji, full = false) {
-  if (!workspace) throw new Error("ワークスペースが分かりませんでした。");
+  if (!workspace) throw new Error(t("errWorkspaceUnknown"));
   const store = (await chrome.storage.local.get(STORE))[STORE] || {};
   const entry = store[workspace] || { emoji: [], syncedAt: null, full: false };
 
@@ -272,7 +274,7 @@ async function mergeCustomEmoji(workspace, emoji, full = false) {
  */
 async function syncCustomEmoji() {
   const tabs = await chrome.tabs.query({ url: "https://app.slack.com/*" });
-  if (tabs.length === 0) throw new Error("Slack のタブが見つかりません。Slack を開いてから実行してください。");
+  if (tabs.length === 0) throw new Error(t("errNoSlackTab"));
 
   const tab = tabs.find((t) => t.active) || tabs[0];
   try {
@@ -291,11 +293,11 @@ async function syncCustomEmoji() {
       45000,
     );
   } catch (err) {
-    if (err?.message === "timeout") throw new Error("取り込みが時間内に終わりませんでした。もう一度試してください。");
-    throw new Error("Slack のタブを再読み込みしてください。");
+    if (err?.message === "timeout") throw new Error(t("errHarvestTimeout"));
+    throw new Error(t("errReloadSlackTab"));
   }
-  if (!res) throw new Error("Slack のタブを再読み込みしてください。");
-  if (!res.ok) throw new Error(res.error || "カスタム絵文字を取り込めませんでした。");
+  if (!res) throw new Error(t("errReloadSlackTab"));
+  if (!res.ok) throw new Error(res.error || t("errHarvestFailed"));
 
   const merged = await mergeCustomEmoji(res.workspace, res.emoji, true);
   return {
@@ -340,7 +342,7 @@ async function clearApiKey() {
 
 async function setApiKey(key) {
   const trimmed = (key || "").trim();
-  if (!trimmed) throw new Error("キーが空です。");
+  if (!trimmed) throw new Error(t("errKeyEmpty"));
   const { provider, apiKeys } = await chrome.storage.local.get(["provider", "apiKeys"]);
   const providerId = provider || DEFAULT_PROVIDER;
   await chrome.storage.local.set({

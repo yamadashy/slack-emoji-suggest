@@ -1,0 +1,262 @@
+{
+  "extensionDescription": {
+    "message": "Suggests emoji reactions for Slack messages, including your workspace's custom emoji.",
+    "description": "Extension description shown in the Chrome Web Store and extensions page."
+  },
+  "rowLabel": {
+    "message": "Suggested by Slack Emoji Suggest",
+    "description": "Heading of the suggestion row in Slack's emoji picker."
+  },
+  "rowDefaultLabel": {
+    "message": "Suggested",
+    "description": "Fallback heading of the suggestion row, if a site adapter defines none."
+  },
+  "rowNoMatch": {
+    "message": "No good matches were found.",
+    "description": "Shown in the suggestion row when nothing scored high enough."
+  },
+  "rowClickToOpenSettings": {
+    "message": "$1 Click to open settings",
+    "description": "Suggestion row status line: an error, followed by a link to open the extension's settings."
+  },
+  "rowMatchedSuffix": {
+    "message": "(name mentioned in the message)",
+    "description": "Appended to a suggestion's tooltip when its name was mentioned in the message."
+  },
+  "rowNameMatchLabel": {
+    "message": "name match",
+    "description": "Appended to a suggestion button's aria-label when its name was mentioned in the message."
+  },
+  "errUnknown": {
+    "message": "Unknown error.",
+    "description": "Generic fallback error message."
+  },
+  "errLoadFailed": {
+    "message": "The extension failed to load: $1",
+    "description": "Shown when the service worker's shared scripts failed to load."
+  },
+  "errNoApiKey": {
+    "message": "No API key is set.",
+    "description": "Error when ranking is requested without an API key configured."
+  },
+  "errWorkspaceUnknown": {
+    "message": "Could not tell which workspace this is.",
+    "description": "Error when a workspace id is required but missing."
+  },
+  "errNoSlackTab": {
+    "message": "No Slack tab was found. Open Slack and try again.",
+    "description": "Error when a full custom-emoji harvest is requested with no open Slack tab."
+  },
+  "errHarvestTimeout": {
+    "message": "The harvest did not finish in time. Please try again.",
+    "description": "Error when a custom-emoji harvest times out."
+  },
+  "errReloadSlackTab": {
+    "message": "Please reload the Slack tab.",
+    "description": "Error when the Slack tab did not answer as expected."
+  },
+  "errHarvestFailed": {
+    "message": "Could not collect the custom emoji.",
+    "description": "Error when a custom-emoji harvest fails for an unspecified reason."
+  },
+  "errKeyEmpty": {
+    "message": "The key is empty.",
+    "description": "Error when saving an empty API key."
+  },
+  "errNoResponse": {
+    "message": "The extension did not respond. Please reload.",
+    "description": "Error when the content script gets no response from the service worker."
+  },
+  "errNoCustomEmojiSupport": {
+    "message": "This site does not support collecting custom emoji.",
+    "description": "Error when the current site's adapter has no harvesting support."
+  },
+  "errHarvestGenericFailed": {
+    "message": "The harvest failed.",
+    "description": "Fallback error when a custom-emoji harvest throws with no message."
+  },
+  "errHarvestNoButton": {
+    "message": "Could not find the button that opens the emoji picker.",
+    "description": "Error during a custom-emoji harvest when the composer's emoji button is missing."
+  },
+  "errHarvestPickerNotOpen": {
+    "message": "The emoji picker did not open.",
+    "description": "Error during a custom-emoji harvest when the picker never appears."
+  },
+  "errHarvestNoCustomTab": {
+    "message": "Could not find the custom emoji tab.",
+    "description": "Error during a custom-emoji harvest when the picker has no custom-emoji tab."
+  },
+  "errInvalidApiKey": {
+    "message": "The API key is not correct. Check it in the extension's settings.",
+    "description": "Error when the ranking provider rejects the API key."
+  },
+  "errBadRequest": {
+    "message": "The question format was rejected by the API (422): $1",
+    "description": "Error when the ranking provider returns a 422 response."
+  },
+  "errRateLimited": {
+    "message": "Hit a rate limit. Please wait a bit and try again.",
+    "description": "Error when the ranking provider returns a 429 response."
+  },
+  "errServerBusy": {
+    "message": "TypeSafe is busy right now. Please wait a bit and try again.",
+    "description": "Error when the ranking provider returns a 529 response."
+  },
+  "errConnectionFailed": {
+    "message": "Could not connect to TypeSafe.",
+    "description": "Error when the request to the ranking provider fails outright."
+  },
+  "errGeneric": {
+    "message": "An error was returned ($1)$2",
+    "description": "Fallback error for an unrecognized status code from the ranking provider."
+  },
+  "errCandidatesEmpty": {
+    "message": "The candidate list is empty.",
+    "description": "Error when parsing an empty emoji candidate list."
+  },
+  "errTooManyCandidates": {
+    "message": "There are $1 candidates. The maximum is $2 per request.",
+    "description": "Error when the emoji candidate list is too long."
+  },
+  "errLineUnreadable": {
+    "message": "Line $1 could not be read. Please write it as `:shortcode: description`: $2",
+    "description": "Error when a candidate list line does not match the expected format."
+  },
+  "errDuplicateShortcode": {
+    "message": "Line $1: $2 is a duplicate.",
+    "description": "Error when a candidate list has the same shortcode twice."
+  },
+  "errStandardCandidates": {
+    "message": "Emoji candidates: $1",
+    "description": "Error prefix for a problem in the standard candidate list."
+  },
+  "errCustomDescriptions": {
+    "message": "Custom emoji descriptions: $1",
+    "description": "Error prefix for a problem in the custom emoji description list."
+  },
+  "busyPickerOpen": {
+    "message": "A picker is open",
+    "description": "Reason a background harvest cannot run: the emoji picker is open."
+  },
+  "busyDialogOpen": {
+    "message": "Another dialog is open",
+    "description": "Reason a background harvest cannot run: some other dialog is open."
+  },
+  "busyTyping": {
+    "message": "You are typing",
+    "description": "Reason a background harvest cannot run: the user is mid-sentence in the composer."
+  },
+  "harvestAbortedByUser": {
+    "message": "Stopped because you did something else",
+    "description": "Recorded reason when a background harvest is aborted by user activity."
+  },
+  "harvestReadFailed": {
+    "message": "Could not read the emoji",
+    "description": "Recorded reason when a background harvest finishes with nothing collected."
+  },
+  "popupLoadFailed": {
+    "message": "Could not load. Try reloading the extension.",
+    "description": "Popup note shown when the initial status request fails."
+  },
+  "popupNoWorkspace": {
+    "message": "Open a Slack tab to see that workspace's settings here.",
+    "description": "Popup note shown when the active tab is not a supported workspace."
+  },
+  "popupPrivacyNote": {
+    "message": "Message text is only sent when you hover over that message, and when you open the emoji picker.",
+    "description": "Popup footer note explaining what data leaves the page."
+  },
+  "popupWorkspaceEnabled": {
+    "message": "In use for this workspace",
+    "description": "Popup status line when suggestions are enabled for the workspace."
+  },
+  "popupWorkspaceDisabled": {
+    "message": "Paused",
+    "description": "Popup status line when suggestions are disabled for the workspace."
+  },
+  "popupToggleAriaLabel": {
+    "message": "Use for this workspace",
+    "description": "Accessible label for the enable/disable switch."
+  },
+  "popupEmojiCount": {
+    "message": "Remembers $1 custom emoji",
+    "description": "Popup line showing how many custom emoji have been learned."
+  },
+  "popupUpdatedAt": {
+    "message": "Updated $1",
+    "description": "Popup line showing when the custom emoji were last synced."
+  },
+  "popupHarvestAgain": {
+    "message": "Collect again",
+    "description": "Button that re-runs the custom-emoji harvest."
+  },
+  "popupNoEmojiYet": {
+    "message": "No emoji learned yet. Open the emoji picker once in Slack, and it will quietly collect them after.",
+    "description": "Popup note shown before any custom emoji have been harvested."
+  },
+  "popupHarvestNow": {
+    "message": "Collect now",
+    "description": "Button that runs the first custom-emoji harvest."
+  },
+  "popupHarvestErrorHint": {
+    "message": "Open the Slack tab and try again.",
+    "description": "Popup hint shown after a harvest request fails."
+  },
+  "popupHarvestFailed": {
+    "message": "Could not collect them.",
+    "description": "Popup message shown when the last recorded harvest failed."
+  },
+  "popupDetailsToggle": {
+    "message": "Details",
+    "description": "Button that expands the error detail text."
+  },
+  "popupKeySaved": {
+    "message": "Saved",
+    "description": "Popup status shown right after the API key is saved."
+  },
+  "popupKeySet": {
+    "message": "The API key is set",
+    "description": "Popup status shown when an API key is already configured."
+  },
+  "popupChange": {
+    "message": "Change",
+    "description": "Link that reopens the API key field to change it."
+  },
+  "popupDelete": {
+    "message": "Delete",
+    "description": "Link that clears the saved API key."
+  },
+  "popupKeyEnterNew": {
+    "message": "Enter a new API key.",
+    "description": "Popup prompt shown when changing an already-set API key."
+  },
+  "popupKeyEnterFirst": {
+    "message": "Enter your API key to get started.",
+    "description": "Popup prompt shown when no API key is set yet."
+  },
+  "popupKeyPlaceholder": {
+    "message": "TypeSafe Jev API key",
+    "description": "Placeholder text for the API key input field."
+  },
+  "popupSave": {
+    "message": "Save",
+    "description": "Button that saves the entered API key."
+  },
+  "popupTimeJustNow": {
+    "message": "just now",
+    "description": "Relative time for a moment that just happened."
+  },
+  "popupTimeMinutesAgo": {
+    "message": "$1 min ago",
+    "description": "Relative time in minutes."
+  },
+  "popupTimeHoursAgo": {
+    "message": "$1 hr ago",
+    "description": "Relative time in hours."
+  },
+  "popupTimeDaysAgo": {
+    "message": "$1 days ago",
+    "description": "Relative time in days."
+  }
+}

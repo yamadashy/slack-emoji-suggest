@@ -98,14 +98,14 @@
           // console, because every cause here ("context invalidated" after a
           // reload, a worker that failed to start) looks identical on screen.
           console.warn("[suggest] runtime error:", chrome.runtime.lastError.message);
-          resolve({ ok: false, error: "拡張機能が応答しませんでした。再読み込みしてください。" });
+          resolve({ ok: false, error: t("errNoResponse") });
           return;
         }
         if (res?.ok) {
           cache.set(message.id, res.suggestions);
           while (cache.size > LOCAL_CACHE_MAX) cache.delete(cache.keys().next().value);
         }
-        resolve(res || { ok: false, error: "不明なエラーです。" });
+        resolve(res || { ok: false, error: t("errUnknown") });
       });
     });
   }
@@ -177,7 +177,7 @@
       const res = await request(message);
       if (seq !== renderSeq || !row.isConnected) return;
       if (res.ok) paint(row, res.suggestions);
-      else if (res.code === "no_api_key") paintSettingsLink(row, `${res.error}クリックして設定`);
+      else if (res.code === "no_api_key") paintSettingsLink(row, t("rowClickToOpenSettings", [res.error]));
       else paintMessage(row, res.error);
     },
   });
@@ -190,12 +190,12 @@
     }
     if (msg?.type !== "collectCustomEmoji") return false;
     if (!adapter.collectCustomEmoji) {
-      sendResponse({ ok: false, error: "このサイトではカスタム絵文字を取り込めません。" });
+      sendResponse({ ok: false, error: t("errNoCustomEmojiSupport") });
       return true;
     }
     runHarvest({ hidden: msg.hidden !== false }).then(
       (res) => sendResponse({ ...res, workspace }),
-      (err) => sendResponse({ ok: false, error: err?.message || "取り込みに失敗しました。" }),
+      (err) => sendResponse({ ok: false, error: err?.message || t("errHarvestGenericFailed") }),
     );
     return true;
   });
@@ -254,7 +254,7 @@
     void send({
       type: "recordHarvest",
       workspace,
-      error: res?.aborted ? "操作が入ったので中断しました" : res?.error || "絵文字を読み取れませんでした",
+      error: res?.aborted ? t("harvestAbortedByUser") : res?.error || t("harvestReadFailed"),
     });
   }
 
@@ -262,7 +262,7 @@
     row.textContent = "";
     const label = document.createElement("div");
     label.className = "sjr-label";
-    label.textContent = adapter.rowLabel || "おすすめ";
+    label.textContent = adapter.rowLabel || t("rowDefaultLabel");
     row.appendChild(label);
     const body = document.createElement("div");
     body.className = "sjr-body";
@@ -325,7 +325,7 @@
   function paint(row, suggestions) {
     const top = choose(suggestions);
     if (top.length === 0) {
-      paintMessage(row, "ぴったりの候補はありませんでした。");
+      paintMessage(row, t("rowNoMatch"));
       return;
     }
     const body = shell(row);
@@ -358,9 +358,12 @@
     b.type = "button";
     b.className = s.matched ? "sjr-item sjr-item--matched" : "sjr-item";
     b.title = s.matched
-      ? `${s.shortcode}  ${s.p.toFixed(2)}  （本文に名前が出ています）`
+      ? `${s.shortcode}  ${s.p.toFixed(2)}  ${t("rowMatchedSuffix")}`
       : `${s.shortcode}  ${s.p.toFixed(2)}`;
-    b.setAttribute("aria-label", `${s.shortcode} ${Math.round(s.p * 100)}%${s.matched ? " 名前一致" : ""}`);
+    b.setAttribute(
+      "aria-label",
+      `${s.shortcode} ${Math.round(s.p * 100)}%${s.matched ? ` ${t("rowNameMatchLabel")}` : ""}`,
+    );
 
     b.appendChild(face(s));
 

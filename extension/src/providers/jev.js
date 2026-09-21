@@ -104,7 +104,7 @@ async function rank({ message, context = [], candidates, apiKey, signal }) {
     });
   } catch (err) {
     if (err?.name === "AbortError") throw err;
-    throw new Error("TypeSafe に接続できませんでした。");
+    throw new Error(t("errConnectionFailed"));
   }
 
   if (!r.ok) throw new Error(await describe(r));
@@ -130,15 +130,15 @@ async function describe(r) {
     // A missing or wrong key comes back as 403 authentication_error, not 401.
     case 401:
     case 403:
-      return "API キーが正しくありません。拡張機能の設定で確認してください。";
+      return t("errInvalidApiKey");
     case 422:
-      return `質問の形が API に弾かれました (422): ${detail}`;
+      return t("errBadRequest", [detail]);
     case 429:
-      return "レート制限に当たりました。少し待ってからもう一度。";
+      return t("errRateLimited");
     case 529:
-      return "TypeSafe 側が混雑しています。少し待ってからもう一度。";
+      return t("errServerBusy");
     default:
-      return `エラーが返りました (${r.status})${detail ? `: ${detail}` : ""}`;
+      return t("errGeneric", [String(r.status), detail ? `: ${detail}` : ""]);
   }
 }
 

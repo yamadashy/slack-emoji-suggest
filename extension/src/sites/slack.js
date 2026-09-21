@@ -369,7 +369,7 @@
 
     /** Heading of the suggestion row. Names the product, so it lives here:
      *  the site-neutral code must not know which site it is running on. */
-    rowLabel: "Slack Emoji Suggest によるおすすめ",
+    rowLabel: t("rowLabel"),
 
     /** A human-readable workspace name, or null to fall back to the id. */
     workspaceName() {
@@ -389,12 +389,12 @@
 
     /** Why it is a bad moment to touch the UI, or null when it is fine. */
     busyReason() {
-      if (document.querySelector(SEL.picker)) return "ピッカーが開いています";
+      if (document.querySelector(SEL.picker)) return t("busyPickerOpen");
       const overlay = [...document.querySelectorAll(SEL.anyOverlay)].find((e) => e.offsetParent !== null);
-      if (overlay) return "別のダイアログが開いています";
+      if (overlay) return t("busyDialogOpen");
       const composer = document.querySelector(SEL.composerInput);
       if (composer && composer.contains(document.activeElement) && (composer.textContent || "").trim() !== "") {
-        return "入力中です"; // mid-sentence: never steal focus
+        return t("busyTyping"); // mid-sentence: never steal focus
       }
       return null;
     },
@@ -574,10 +574,10 @@
       try {
         if (openedByUs) {
           const trigger = document.querySelector(SEL.composerEmojiButton);
-          if (!trigger) return { ok: false, error: "絵文字ピッカーを開くボタンが見つかりませんでした。" };
+          if (!trigger) return { ok: false, error: t("errHarvestNoButton") };
           trigger.click();
           picker = await waitForPicker();
-          if (!picker) return { ok: false, error: "絵文字ピッカーが開きませんでした。" };
+          if (!picker) return { ok: false, error: t("errHarvestPickerNotOpen") };
         }
 
         const previousTab = picker.querySelector(SEL.pickerTabSelected)?.getAttribute("data-qa") || null;
@@ -586,7 +586,7 @@
 
         try {
           const customTab = picker.querySelector(SEL.pickerTabCustom);
-          if (!customTab) return { ok: false, error: "カスタム絵文字のタブが見つかりませんでした。" };
+          if (!customTab) return { ok: false, error: t("errHarvestNoCustomTab") };
           customTab.click();
           await sleep(700); // the tab swap re-mounts the grid
 

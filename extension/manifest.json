@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Slack Emoji Suggest",
   "version": "0.1.1",
-  "description": "Suggests emoji reactions for Slack messages, including your workspace's custom emoji.",
+  "default_locale": "en",
+  "description": "__MSG_extensionDescription__",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnPWsFSSznuU3PfONLXj/VYfoJvVpxGlDiJl5VGhXNt0UDyEN96vGgUNyixb4iIYnU+HfmEk5r+PgMtrp5RK4LwFMLcbmnvFqRGfUDqOKPZIUgOqQttrruGekvGFXcVnovJGFIaIpeAnTklHuUDu8bOOgG9lB9ny3GjBMpcmSlynfa7oeSFcZ/reP7odWX8gTxiV596EiL0sHfgymzL4D2fn2JZfzFZzBH4hOxt4fpmOASqHdQf3XTg8CUws1fX5QyrIE9Itbwgvd6fYW/IQ7jPi//aSDAImyXKLw63vtYm4MDPEg1P5dVsN/3tKiEMJS9m4A3KDmtierrZ4DDCnDWQIDAQAB",
   "permissions": [
     "storage"
@@ -20,6 +21,7 @@
         "https://app.slack.com/*"
       ],
       "js": [
+        "src/i18n.js",
         "src/sites/slack.js",
         "src/content.js"
       ],

@@ -8,6 +8,8 @@
  * The API key is deliberately one-way: the popup can set it and can ask
  * whether one exists, but there is no call that returns it.
  */
+import { t } from "./i18n";
+
 export interface Status {
   /** null when the active tab is not a supported chat app. */
   workspace: string | null;
@@ -26,7 +28,7 @@ function ask<T>(message: unknown): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     chrome.runtime.sendMessage(message, (res: { ok?: boolean; error?: string }) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!res?.ok) return reject(new Error(res?.error || "不明なエラーです。"));
+      if (!res?.ok) return reject(new Error(res?.error || t("errUnknown")));
       resolve(res as T);
     });
   });
@@ -97,9 +99,9 @@ export const bridge = {
 export function relativeTime(ts: number | null): string | null {
   if (!ts) return null;
   const mins = Math.round((Date.now() - ts) / 60000);
-  if (mins < 1) return "たった今";
-  if (mins < 60) return `${mins} 分前`;
+  if (mins < 1) return t("popupTimeJustNow");
+  if (mins < 60) return t("popupTimeMinutesAgo", mins);
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} 時間前`;
-  return `${Math.round(hours / 24)} 日前`;
+  if (hours < 24) return t("popupTimeHoursAgo", hours);
+  return t("popupTimeDaysAgo", Math.round(hours / 24));
 }
