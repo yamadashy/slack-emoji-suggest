@@ -24,6 +24,19 @@
       "matchUpdateTypes": ["major"],
       "groupName": "major dependencies",
     },
+    // GitHub Actions get the same split. `pin` and `digest` are grouped
+    // with the non-major updates so SHA-pinned actions do not open a PR
+    // each.
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "github-actions non-major dependencies",
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "github-actions major dependencies",
+    },
   ],
   "ignoreDeps": [
     // The Node.js version is bumped intentionally, not by Renovate.
